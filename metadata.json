@@ -1,0 +1,6 @@
+{
+  "name": "Eclesia - Asistencia y Visitas de Iglesia",
+  "description": "Sistema de gestión eclesiástica para registro en tiempo real de conferencias, actividades, visitas y asistentes con control de días semanales (L, M, Mi, J, V, S, D), reportes automáticos y estadísticas de crecimiento.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
