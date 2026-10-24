@@ -86,11 +86,32 @@ export const ConferenceManager: React.FC<ConferenceManagerProps> = ({
         </button>
       </div>
 
-      {/* Grid of Events */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {events.map((evt) => {
-          const isActive = evt.id === activeEventId;
-          const totalAttending = evt.attendees.length;
+      {/* Grid of Events or Empty State */}
+      {events.length === 0 ? (
+        <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 shadow-xs space-y-4">
+          <div className="w-12 h-12 mx-auto rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600">
+            <Calendar className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-bold text-slate-800">No hay conferencias o actividades creadas</h3>
+            <p className="text-xs text-slate-500 max-w-md mx-auto">
+              La página está en blanco lista para que ingreses los cultos, conferencias o vigilias reales de tu iglesia.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowAddModal(true)}
+            className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-colors shadow-xs"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Crear Primera Conferencia o Culto</span>
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {events.map((evt) => {
+            const isActive = evt.id === activeEventId;
+            const totalAttending = evt.attendees.length;
 
           // Count visitors among attendees
           const visitorsCount = evt.attendees.filter((id) => {
@@ -200,6 +221,7 @@ export const ConferenceManager: React.FC<ConferenceManagerProps> = ({
           );
         })}
       </div>
+      )}
 
       {/* Modal to add new event */}
       {showAddModal && (

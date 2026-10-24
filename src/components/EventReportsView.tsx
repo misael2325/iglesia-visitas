@@ -124,8 +124,14 @@ export const EventReportsView: React.FC<EventReportsViewProps> = ({
 
   if (!currentEvent) {
     return (
-      <div className="bg-white rounded-2xl p-12 text-center border border-slate-200">
-        <p className="text-slate-600">No hay conferencias registradas para generar reportes.</p>
+      <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 shadow-xs space-y-3">
+        <div className="w-12 h-12 mx-auto rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+          <FileText className="w-6 h-6" />
+        </div>
+        <h3 className="text-base font-bold text-slate-800">No hay conferencias o cultos creados para generar reportes</h3>
+        <p className="text-xs text-slate-500 max-w-md mx-auto">
+          Crea tu primera conferencia o culto en la pestaña "Conferencias y Actividades" para comenzar a generar reportes automáticos detallados de asistencia y visitas.
+        </p>
       </div>
     );
   }

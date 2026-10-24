@@ -1,5 +1,5 @@
 import React from 'react';
-import { UserPlus, Church } from 'lucide-react';
+import { UserPlus, Church, Cloud } from 'lucide-react';
 
 export type NavTab = 'asistencia' | 'conferencias' | 'reportes' | 'estadisticas';
 
@@ -7,12 +7,14 @@ interface HeaderProps {
   currentTab: NavTab;
   onChangeTab: (tab: NavTab) => void;
   onOpenRegister: () => void;
+  onOpenBackupModal: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   currentTab,
   onChangeTab,
   onOpenRegister,
+  onOpenBackupModal,
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200">
@@ -83,8 +85,19 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </nav>
 
-          {/* Zone 3: 1 Primary Action */}
-          <div className="flex items-center gap-3 shrink-0">
+          {/* Zone 3: Actions */}
+          <div className="flex items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={onOpenBackupModal}
+              className="px-3 py-2 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5"
+              title="Respaldo en JSON y Base de Datos Supabase"
+            >
+              <Cloud className="w-4 h-4 text-indigo-600" />
+              <span className="hidden sm:inline">Nube & Respaldo JSON</span>
+              <span className="sm:hidden">Nube</span>
+            </button>
+
             <button
               type="button"
               onClick={onOpenRegister}
