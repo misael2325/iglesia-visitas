@@ -40,7 +40,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<UserRole>('recepcion');
+  const [role, setRole] = useState<UserRole>('secretaria');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Reset password states
@@ -188,6 +188,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                     className="w-full px-3 py-1.5 text-xs bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
                   >
                     <option value="secretaria">Secretaría (Solo Asistencia y Reportes)</option>
+                    <option value="directiva_clubes">Directiva de Clubes (Solo módulo de Clubes)</option>
                     <option value="pastor">Pastor (Supervisión Pastoral General)</option>
                     <option value="anciano">Anciano de Iglesia (Supervisión y Asistencia)</option>
                     <option value="administrador">Administrador General (Control Total)</option>
@@ -266,6 +267,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                             className="text-xs bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-md py-1 px-2 text-slate-800 dark:text-slate-200"
                           >
                             <option value="secretaria">Secretaría (Asistencia y Reportes)</option>
+                            <option value="directiva_clubes">Directiva de Clubes (Solo Clubes)</option>
                             <option value="pastor">Pastor</option>
                             <option value="anciano">Anciano</option>
                             <option value="administrador">Administrador</option>

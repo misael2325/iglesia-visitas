@@ -51,6 +51,7 @@ export type UserRole =
   | 'pastor' 
   | 'anciano' 
   | 'secretaria' 
+  | 'directiva_clubes'
   | 'admin' 
   | 'recepcion' 
   | 'lider';
@@ -214,6 +215,8 @@ export function getRoleDisplayName(role: UserRole): string {
       return 'Anciano';
     case 'secretaria':
       return 'Secretaría';
+    case 'directiva_clubes':
+      return 'Directiva de Clubes';
     case 'recepcion':
       return 'Recepción';
     case 'lider':
@@ -225,6 +228,10 @@ export function getRoleDisplayName(role: UserRole): string {
 
 export function isSecretariaRole(role?: UserRole): boolean {
   return role === 'secretaria';
+}
+
+export function isDirectivaClubesRole(role?: UserRole): boolean {
+  return role === 'directiva_clubes';
 }
 
 export function isAdminRole(role?: UserRole): boolean {

@@ -236,6 +236,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 className="w-full px-3.5 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white"
               >
                 <option value="secretaria">Secretaría (Asistencia y Reportes únicamente)</option>
+                <option value="directiva_clubes">Directiva de Clubes (Solo módulo de Clubes)</option>
                 <option value="pastor">Pastor (Supervisión Pastoral General)</option>
                 <option value="anciano">Anciano de Iglesia (Supervisión y Asistencia)</option>
                 <option value="administrador">Administrador General (Control Total)</option>

@@ -17,10 +17,14 @@ import {
 export const DEFAULT_SUPABASE_PROJECT_ID = 'ewwtdeypwetvpjjbbgdi';
 export const DEFAULT_SUPABASE_URL = `https://${DEFAULT_SUPABASE_PROJECT_ID}.supabase.co`;
 export const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_GnoiDE0dtUks_INAuHKfcg_ZdVDw5rG';
+export const PERMANENT_SYNC_CODE = 'ECLESIA-EWWTDEYPWETVPJJBBGDI';
 
 const STORAGE_KEY_URL = 'eclesia_supabase_url';
 const STORAGE_KEY_ANON_KEY = 'eclesia_supabase_anon_key';
 const STORAGE_KEY_AUTO_SYNC = 'eclesia_supabase_auto_sync';
+const STORAGE_KEY_DELETED_IDS = 'eclesia_deleted_ids_v2';
+const DELETED_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const MAX_DELETED_TOMBSTONES = 500;
 
 export interface SupabaseConfig {
   url: string;
@@ -44,6 +48,89 @@ export interface ChurchDataPayload {
   clubEnrollments?: ClubEnrollment[];
   biblicalCharacters?: BiblicalCharacterRegistration[];
   contestConfig?: ContestCustomConfig;
+  deletedIds?: Record<string, number>;
+}
+
+export function mergeDeletedIds(
+  ...maps: Array<Record<string, number> | undefined | null>
+): Record<string, number> {
+  const cutoff = Date.now() - DELETED_TTL_MS;
+  const combined = new Map<string, number>();
+
+  for (const m of maps) {
+    if (!m || typeof m !== 'object') continue;
+    for (const [id, ts] of Object.entries(m)) {
+      if (typeof ts === 'number' && Number.isFinite(ts) && ts > cutoff) {
+        const prev = combined.get(id) || 0;
+        if (ts > prev) combined.set(id, ts);
+      }
+    }
+  }
+
+  // Keep most recent tombstones up to MAX_DELETED_TOMBSTONES
+  const entries = Array.from(combined.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, MAX_DELETED_TOMBSTONES);
+
+  const result: Record<string, number> = {};
+  for (const [id, ts] of entries) {
+    result[id] = ts;
+  }
+  return result;
+}
+
+export function getLocalDeletedIds(): Record<string, number> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_DELETED_IDS);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return mergeDeletedIds(parsed);
+  } catch {
+    return {};
+  }
+}
+
+export function saveLocalDeletedIds(map: Record<string, number>): Record<string, number> {
+  const cleaned = mergeDeletedIds(map);
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(STORAGE_KEY_DELETED_IDS, JSON.stringify(cleaned));
+    } catch {}
+  }
+  return cleaned;
+}
+
+export function recordLocalDeletedIds(ids: string[]): Record<string, number> {
+  const current = getLocalDeletedIds();
+  const now = Date.now();
+  for (const id of ids) {
+    if (id) current[id] = now;
+  }
+  return saveLocalDeletedIds(current);
+}
+
+function stripDeletedFromPayload(
+  payload: ChurchDataPayload,
+  deletedMap: Record<string, number>
+): ChurchDataPayload {
+  const keep = <T extends { id?: string }>(arr?: T[]): T[] | undefined =>
+    Array.isArray(arr) ? arr.filter((item) => item && (!item.id || !deletedMap[item.id])) : arr;
+
+  return {
+    ...payload,
+    attendees: keep(payload.attendees) || [],
+    events: keep(payload.events) || [],
+    users: keep(payload.users),
+    clubs: keep(payload.clubs),
+    clubActivities: keep(payload.clubActivities),
+    clubTransactions: keep(payload.clubTransactions),
+    photos: keep(payload.photos),
+    camporeeShirts: keep(payload.camporeeShirts),
+    clubEnrollments: keep(payload.clubEnrollments),
+    biblicalCharacters: keep(payload.biblicalCharacters),
+    deletedIds: deletedMap,
+  };
 }
 
 export interface TableStatus {
@@ -161,37 +248,27 @@ export function createPublicRegistrationShareUrl(origin?: string): string {
 }
 
 export function getSupabaseConfig(): SupabaseConfig {
-  // Check if link had auto-link credentials
-  autoLinkSupabaseFromUrl();
-
-  const envUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
-  const envKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
-
-  const savedUrl = localStorage.getItem(STORAGE_KEY_URL);
-  const savedKey = localStorage.getItem(STORAGE_KEY_ANON_KEY);
-  const savedAutoSync = localStorage.getItem(STORAGE_KEY_AUTO_SYNC);
-
-  const finalUrl = normalizeSupabaseUrl(savedUrl || envUrl || DEFAULT_SUPABASE_URL);
-  const finalKey = savedKey && savedKey.trim().length > 0 ? savedKey.trim() : (envKey || DEFAULT_SUPABASE_ANON_KEY);
+  // Permanent, non-editable database configuration across all PCs and devices
+  try {
+    localStorage.setItem(STORAGE_KEY_URL, DEFAULT_SUPABASE_URL);
+    localStorage.setItem(STORAGE_KEY_ANON_KEY, DEFAULT_SUPABASE_ANON_KEY);
+    localStorage.setItem(STORAGE_KEY_AUTO_SYNC, 'true');
+  } catch {}
 
   return {
-    url: finalUrl,
-    anonKey: finalKey,
-    autoSync: savedAutoSync === null ? true : savedAutoSync === 'true',
+    url: DEFAULT_SUPABASE_URL,
+    anonKey: DEFAULT_SUPABASE_ANON_KEY,
+    autoSync: true,
   };
 }
 
-export function saveSupabaseConfig(config: Partial<SupabaseConfig>) {
-  if (config.url !== undefined) {
-    const clean = normalizeSupabaseUrl(config.url);
-    localStorage.setItem(STORAGE_KEY_URL, clean);
-  }
-  if (config.anonKey !== undefined) {
-    localStorage.setItem(STORAGE_KEY_ANON_KEY, config.anonKey.trim());
-  }
-  if (config.autoSync !== undefined) {
-    localStorage.setItem(STORAGE_KEY_AUTO_SYNC, String(config.autoSync));
-  }
+export function saveSupabaseConfig(_config?: Partial<SupabaseConfig>) {
+  // Permanent code is locked to prevent accidental disconnection on any PC
+  try {
+    localStorage.setItem(STORAGE_KEY_URL, DEFAULT_SUPABASE_URL);
+    localStorage.setItem(STORAGE_KEY_ANON_KEY, DEFAULT_SUPABASE_ANON_KEY);
+    localStorage.setItem(STORAGE_KEY_AUTO_SYNC, 'true');
+  } catch {}
   cachedClient = null;
   lastClientKey = '';
 }
@@ -387,7 +464,9 @@ CREATE TABLE IF NOT EXISTS biblical_characters (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Asegurar que las columnas opcionales y nuevas no bloqueen inscripciones públicas
+-- Asegurar que las columnas opcionales y nuevas no bloqueen inscripciones públicas o clubes
+ALTER TABLE IF EXISTS clubs ADD COLUMN IF NOT EXISTS director TEXT DEFAULT '';
+ALTER TABLE IF EXISTS clubs ADD COLUMN IF NOT EXISTS period TEXT DEFAULT '2026';
 ALTER TABLE IF EXISTS biblical_characters ALTER COLUMN escena DROP NOT NULL;
 ALTER TABLE IF EXISTS biblical_characters ALTER COLUMN ensenanza DROP NOT NULL;
 ALTER TABLE IF EXISTS biblical_characters ALTER COLUMN escena SET DEFAULT '';
@@ -568,13 +647,31 @@ export async function pushDataToSupabase(payload: ChurchDataPayload): Promise<{ 
   }
 
   try {
+    // 0. Fetch cloud tombstones first so deleted records are NEVER re-inserted by a stale device/tab
+    let cloudDeletedIds: Record<string, number> = {};
+    try {
+      const { data: existingStore } = await client
+        .from('church_store')
+        .select('data')
+        .eq('id', 'main_church_data')
+        .maybeSingle();
+      if (existingStore?.data?.deletedIds) {
+        cloudDeletedIds = existingStore.data.deletedIds;
+      }
+    } catch {}
+
+    const mergedDeleted = saveLocalDeletedIds(
+      mergeDeletedIds(getLocalDeletedIds(), payload.deletedIds, cloudDeletedIds)
+    );
+    const cleanPayload = stripDeletedFromPayload(payload, mergedDeleted);
+
     // 1. Always save atomic snapshot in church_store for instant backup integrity
     const { error: storeError } = await client
       .from('church_store')
       .upsert(
         {
           id: 'main_church_data',
-          data: payload,
+          data: cleanPayload,
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'id' }
@@ -582,8 +679,8 @@ export async function pushDataToSupabase(payload: ChurchDataPayload): Promise<{ 
 
     // 2. Also sync to individual relational tables if they exist
     try {
-      if (payload.attendees && payload.attendees.length > 0) {
-        const attendeeRecords = payload.attendees.map((a) => ({
+      if (cleanPayload.attendees && cleanPayload.attendees.length > 0) {
+        const attendeeRecords = cleanPayload.attendees.map((a) => ({
           id: a.id,
           first_name: a.firstName,
           last_name: a.lastName,
@@ -598,8 +695,8 @@ export async function pushDataToSupabase(payload: ChurchDataPayload): Promise<{ 
         await client.from('attendees').upsert(attendeeRecords, { onConflict: 'id' });
       }
 
-      if (payload.events && payload.events.length > 0) {
-        const eventRecords = payload.events.map((e) => ({
+      if (cleanPayload.events && cleanPayload.events.length > 0) {
+        const eventRecords = cleanPayload.events.map((e) => ({
           id: e.id,
           title: e.title,
           category: e.category,
@@ -613,18 +710,30 @@ export async function pushDataToSupabase(payload: ChurchDataPayload): Promise<{ 
         await client.from('church_events').upsert(eventRecords, { onConflict: 'id' });
       }
 
-      if (payload.clubs && payload.clubs.length > 0) {
-        const clubRecords = payload.clubs.map((c) => ({
+      if (cleanPayload.clubs && cleanPayload.clubs.length > 0) {
+        const clubRecords = cleanPayload.clubs.map((c) => ({
           id: c.id,
           name: c.name,
           description: c.description || '',
           color: c.color || 'blue',
+          director: c.director || '',
+          period: c.period || '2026',
         }));
-        await client.from('clubs').upsert(clubRecords, { onConflict: 'id' });
+        const { error: clubErr } = await client.from('clubs').upsert(clubRecords, { onConflict: 'id' });
+        if (clubErr) {
+          // Fallback if director/period columns do not exist in live clubs table yet
+          const baseClubRecords = cleanPayload.clubs.map((c) => ({
+            id: c.id,
+            name: c.name,
+            description: c.description || '',
+            color: c.color || 'blue',
+          }));
+          await client.from('clubs').upsert(baseClubRecords, { onConflict: 'id' });
+        }
       }
 
-      if (payload.clubActivities && payload.clubActivities.length > 0) {
-        const actRecords = payload.clubActivities.map((a) => ({
+      if (cleanPayload.clubActivities && cleanPayload.clubActivities.length > 0) {
+        const actRecords = cleanPayload.clubActivities.map((a) => ({
           id: a.id,
           club_id: a.clubId,
           club_name: a.clubName,
@@ -637,8 +746,8 @@ export async function pushDataToSupabase(payload: ChurchDataPayload): Promise<{ 
         await client.from('club_activities').upsert(actRecords, { onConflict: 'id' });
       }
 
-      if (payload.clubTransactions && payload.clubTransactions.length > 0) {
-        const txRecords = payload.clubTransactions.map((t) => ({
+      if (cleanPayload.clubTransactions && cleanPayload.clubTransactions.length > 0) {
+        const txRecords = cleanPayload.clubTransactions.map((t) => ({
           id: t.id,
           activity_id: t.activityId,
           activity_name: t.activityName,
@@ -656,8 +765,48 @@ export async function pushDataToSupabase(payload: ChurchDataPayload): Promise<{ 
         await client.from('club_transactions').upsert(txRecords, { onConflict: 'id' });
       }
 
-      if (payload.users && payload.users.length > 0) {
-        const userRecords = payload.users.map((u) => ({
+      if (cleanPayload.camporeeShirts && cleanPayload.camporeeShirts.length > 0) {
+        const shirtRecords = cleanPayload.camporeeShirts.map((s) => ({
+          id: s.id,
+          club_id: s.clubId,
+          club_name: s.clubName,
+          person_name: s.personName,
+          size: s.size,
+          quantity: s.quantity || 1,
+          total_price: s.totalPrice || 0,
+          amount_paid: s.amountPaid || 0,
+          is_paid: !!s.isPaid,
+          payment_date: s.paymentDate,
+          phone: s.phone || '',
+          notes: s.notes || '',
+        }));
+        const { error: shirtErr } = await client.from('camporee_shirts').upsert(shirtRecords, { onConflict: 'id' });
+        if (shirtErr) console.warn('Upsert camporee_shirts:', shirtErr.message);
+      }
+
+      if (cleanPayload.clubEnrollments && cleanPayload.clubEnrollments.length > 0) {
+        const enrollRecords = cleanPayload.clubEnrollments.map((e) => ({
+          id: e.id,
+          club_id: e.clubId,
+          club_name: e.clubName,
+          member_name: e.memberName,
+          period: e.period || '2026',
+          category: e.category || 'Conquistador',
+          tutor_name: e.tutorName || '',
+          phone: e.phone || '',
+          fee_amount: e.feeAmount || 0,
+          amount_paid: e.amountPaid || 0,
+          is_paid: !!e.isPaid,
+          enrollment_date: e.enrollmentDate,
+          receipt_number: e.receiptNumber || '',
+          medical_notes: e.medicalNotes || '',
+        }));
+        const { error: enrollErr } = await client.from('club_enrollments').upsert(enrollRecords, { onConflict: 'id' });
+        if (enrollErr) console.warn('Upsert club_enrollments:', enrollErr.message);
+      }
+
+      if (cleanPayload.users && cleanPayload.users.length > 0) {
+        const userRecords = cleanPayload.users.map((u) => ({
           id: u.id,
           name: u.name,
           email: u.email,
@@ -668,9 +817,9 @@ export async function pushDataToSupabase(payload: ChurchDataPayload): Promise<{ 
         await client.from('app_users').upsert(userRecords, { onConflict: 'id' });
       }
 
-      // Sync Biblical Characters Contest Registrations
-      if (payload.biblicalCharacters && payload.biblicalCharacters.length > 0) {
-        const characterRecords = payload.biblicalCharacters.map((b) => ({
+      // Sync Biblical Characters Contest Contest Registrations
+      if (cleanPayload.biblicalCharacters && cleanPayload.biblicalCharacters.length > 0) {
+        const characterRecords = cleanPayload.biblicalCharacters.map((b) => ({
           id: b.id,
           nombre: b.nombre,
           edad: b.edad || '',
@@ -689,8 +838,8 @@ export async function pushDataToSupabase(payload: ChurchDataPayload): Promise<{ 
       }
 
       // 3. Sync Photos to church_photos table in batches of 5
-      if (payload.photos && payload.photos.length > 0) {
-        const photoRecords = payload.photos.map((p) => ({
+      if (cleanPayload.photos && cleanPayload.photos.length > 0) {
+        const photoRecords = cleanPayload.photos.map((p) => ({
           id: p.id,
           title: p.title,
           album: p.album || 'Culto de Adoración',
@@ -749,6 +898,7 @@ export async function pullDataFromSupabase(): Promise<{
   try {
     let pulledPayload: ChurchDataPayload | null = null;
     let updatedAtStr: string | null = null;
+    let cloudDeletedIds: Record<string, number> = {};
 
     // 1. Try pulling atomic store snapshot
     try {
@@ -761,10 +911,15 @@ export async function pullDataFromSupabase(): Promise<{
       if (!error && data && data.data) {
         pulledPayload = data.data as ChurchDataPayload;
         updatedAtStr = data.updated_at;
+        if (pulledPayload.deletedIds) {
+          cloudDeletedIds = pulledPayload.deletedIds;
+        }
       }
     } catch (storeErr) {
       console.warn('Could not read from church_store, trying relational tables...', storeErr);
     }
+
+    const deletedMap = saveLocalDeletedIds(mergeDeletedIds(getLocalDeletedIds(), cloudDeletedIds));
 
     // 2. Query church_photos directly to ensure full gallery fidelity
     try {
@@ -811,36 +966,52 @@ export async function pullDataFromSupabase(): Promise<{
         .select('*')
         .order('fecha', { ascending: false });
 
-      if (!charsError && charsData && charsData.length > 0) {
-        const mappedChars: BiblicalCharacterRegistration[] = charsData.map((row: any) => ({
-          id: row.id,
-          nombre: row.nombre,
-          edad: row.edad || '',
-          contacto: row.contacto,
-          iglesia: row.iglesia || '',
-          personaje: row.personaje,
-          escena: row.escena,
-          utileria: row.utileria || '',
-          audio: row.audio || 'No',
-          ensenanza: row.ensenanza,
-          fecha: row.fecha,
-          aprobado: !!row.aprobado,
-          notasOrganizador: row.notas_organizador || '',
-        }));
+      if (!charsError && Array.isArray(charsData)) {
+        const mappedChars: BiblicalCharacterRegistration[] = charsData
+          .filter((row: any) => row && row.id && !deletedMap[row.id])
+          .map((row: any) => ({
+            id: row.id,
+            nombre: row.nombre,
+            edad: row.edad || '',
+            contacto: row.contacto,
+            iglesia: row.iglesia || '',
+            personaje: row.personaje,
+            escena: row.escena,
+            utileria: row.utileria || '',
+            audio: row.audio || 'No',
+            ensenanza: row.ensenanza,
+            fecha: row.fecha,
+            aprobado: !!row.aprobado,
+            notasOrganizador: row.notas_organizador || '',
+          }));
 
         if (!pulledPayload) {
-          pulledPayload = {
-            version: 1,
-            exportedAt: new Date().toISOString(),
-            attendees: [],
-            events: [],
-            zones: [],
-            biblicalCharacters: mappedChars,
-          };
+          if (mappedChars.length > 0) {
+            pulledPayload = {
+              version: 1,
+              exportedAt: new Date().toISOString(),
+              attendees: [],
+              events: [],
+              zones: [],
+              biblicalCharacters: mappedChars,
+            };
+          }
         } else {
-          // Merge registrations, keeping newest
-          const existingMap = new Map((pulledPayload.biblicalCharacters || []).map((c) => [c.id, c]));
-          mappedChars.forEach((c) => existingMap.set(c.id, c));
+          // Merge registrations while strictly honoring deleted tombstones
+          const existingMap = new Map<string, BiblicalCharacterRegistration>();
+          (pulledPayload.biblicalCharacters || []).forEach((c) => {
+            if (c && c.id && !deletedMap[c.id]) {
+              existingMap.set(c.id, c);
+            }
+          });
+          mappedChars.forEach((c) => {
+            const prev = existingMap.get(c.id);
+            existingMap.set(c.id, {
+              ...prev,
+              ...c,
+              iglesia: c.iglesia || prev?.iglesia || '',
+            });
+          });
           pulledPayload.biblicalCharacters = Array.from(existingMap.values());
         }
       }
@@ -848,21 +1019,143 @@ export async function pullDataFromSupabase(): Promise<{
       console.warn('Could not read from biblical_characters table:', charErr);
     }
 
+    // 2.6 Query club_enrollments directly so multi-device / real-time registrations are NEVER lost
+    try {
+      const { data: enrollData, error: enrollError } = await client
+        .from('club_enrollments')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!enrollError && Array.isArray(enrollData)) {
+        const mappedEnrollments: ClubEnrollment[] = enrollData
+          .filter((row: any) => row && row.id && !deletedMap[row.id])
+          .map((row: any) => ({
+            id: row.id,
+            clubId: row.club_id,
+            clubName: row.club_name,
+            memberName: row.member_name,
+            period: row.period || '2026',
+            category: row.category || 'Conquistador',
+            tutorName: row.tutor_name || undefined,
+            phone: row.phone || undefined,
+            feeAmount: Number(row.fee_amount) || 0,
+            amountPaid: Number(row.amount_paid) || 0,
+            isPaid: !!row.is_paid,
+            enrollmentDate: row.enrollment_date,
+            receiptNumber: row.receipt_number || undefined,
+            medicalNotes: row.medical_notes || undefined,
+            createdAt: row.created_at || new Date().toISOString(),
+          }));
+
+        if (!pulledPayload) {
+          if (mappedEnrollments.length > 0) {
+            pulledPayload = {
+              version: 1,
+              exportedAt: new Date().toISOString(),
+              attendees: [],
+              events: [],
+              zones: [],
+              clubEnrollments: mappedEnrollments,
+            };
+          }
+        } else {
+          const existingMap = new Map<string, ClubEnrollment>();
+          (pulledPayload.clubEnrollments || []).forEach((item) => {
+            if (item && item.id && !deletedMap[item.id]) {
+              existingMap.set(item.id, item);
+            }
+          });
+          mappedEnrollments.forEach((item) => {
+            const prev = existingMap.get(item.id);
+            existingMap.set(item.id, {
+              ...prev,
+              ...item,
+            });
+          });
+          pulledPayload.clubEnrollments = Array.from(existingMap.values());
+        }
+      }
+    } catch (enrollErr) {
+      console.warn('Could not read from club_enrollments table:', enrollErr);
+    }
+
+    // 2.7 Query camporee_shirts directly so shirt orders stay synced across devices
+    try {
+      const { data: shirtData, error: shirtError } = await client
+        .from('camporee_shirts')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!shirtError && Array.isArray(shirtData)) {
+        const mappedShirts: CamporeeShirtPayment[] = shirtData
+          .filter((row: any) => row && row.id && !deletedMap[row.id])
+          .map((row: any) => ({
+            id: row.id,
+            clubId: row.club_id,
+            clubName: row.club_name,
+            personName: row.person_name,
+            size: row.size,
+            quantity: Number(row.quantity) || 1,
+            totalPrice: Number(row.total_price) || 0,
+            amountPaid: Number(row.amount_paid) || 0,
+            isPaid: !!row.is_paid,
+            paymentDate: row.payment_date,
+            phone: row.phone || undefined,
+            notes: row.notes || undefined,
+            createdAt: row.created_at || new Date().toISOString(),
+          }));
+
+        if (!pulledPayload) {
+          if (mappedShirts.length > 0) {
+            pulledPayload = {
+              version: 1,
+              exportedAt: new Date().toISOString(),
+              attendees: [],
+              events: [],
+              zones: [],
+              camporeeShirts: mappedShirts,
+            };
+          }
+        } else {
+          const existingMap = new Map<string, CamporeeShirtPayment>();
+          (pulledPayload.camporeeShirts || []).forEach((item) => {
+            if (item && item.id && !deletedMap[item.id]) {
+              existingMap.set(item.id, item);
+            }
+          });
+          mappedShirts.forEach((item) => {
+            const prev = existingMap.get(item.id);
+            existingMap.set(item.id, {
+              ...prev,
+              ...item,
+            });
+          });
+          pulledPayload.camporeeShirts = Array.from(existingMap.values());
+        }
+      }
+    } catch (shirtErr) {
+      console.warn('Could not read from camporee_shirts table:', shirtErr);
+    }
+
     // 3. Fallback: If church_store was empty, try reading relational tables
     if (!pulledPayload) {
       try {
-        const [attRes, evtRes, clubRes, actRes, txRes, userRes] = await Promise.all([
+        const [attRes, evtRes, clubRes, actRes, txRes, userRes, shirtRes, enrollRes] = await Promise.all([
           client.from('attendees').select('*'),
           client.from('church_events').select('*'),
           client.from('clubs').select('*'),
           client.from('club_activities').select('*'),
           client.from('club_transactions').select('*'),
           client.from('app_users').select('*'),
+          client.from('camporee_shirts').select('*'),
+          client.from('club_enrollments').select('*'),
         ]);
 
         const hasAnyRelational = (attRes.data && attRes.data.length > 0) ||
           (evtRes.data && evtRes.data.length > 0) ||
-          (clubRes.data && clubRes.data.length > 0);
+          (clubRes.data && clubRes.data.length > 0) ||
+          (enrollRes.data && enrollRes.data.length > 0) ||
+          (shirtRes.data && shirtRes.data.length > 0);
 
         if (hasAnyRelational) {
           pulledPayload = {
@@ -897,6 +1190,8 @@ export async function pullDataFromSupabase(): Promise<{
               name: row.name,
               description: row.description || '',
               color: row.color || 'blue',
+              director: row.director || '',
+              period: row.period || '2026',
             })),
             clubActivities: (actRes.data || []).map((row: any) => ({
               id: row.id,
@@ -925,6 +1220,38 @@ export async function pullDataFromSupabase(): Promise<{
               receiptNumber: row.receipt_number || '',
               createdAt: row.created_at || new Date().toISOString(),
             })),
+            camporeeShirts: (shirtRes.data || []).map((row: any) => ({
+              id: row.id,
+              clubId: row.club_id,
+              clubName: row.club_name,
+              personName: row.person_name,
+              size: row.size,
+              quantity: Number(row.quantity) || 1,
+              totalPrice: Number(row.total_price) || 0,
+              amountPaid: Number(row.amount_paid) || 0,
+              isPaid: !!row.is_paid,
+              paymentDate: row.payment_date,
+              phone: row.phone || undefined,
+              notes: row.notes || undefined,
+              createdAt: row.created_at || new Date().toISOString(),
+            })),
+            clubEnrollments: (enrollRes.data || []).map((row: any) => ({
+              id: row.id,
+              clubId: row.club_id,
+              clubName: row.club_name,
+              memberName: row.member_name,
+              period: row.period || '2026',
+              category: row.category || 'Conquistador',
+              tutorName: row.tutor_name || undefined,
+              phone: row.phone || undefined,
+              feeAmount: Number(row.fee_amount) || 0,
+              amountPaid: Number(row.amount_paid) || 0,
+              isPaid: !!row.is_paid,
+              enrollmentDate: row.enrollment_date,
+              receiptNumber: row.receipt_number || undefined,
+              medicalNotes: row.medical_notes || undefined,
+              createdAt: row.created_at || new Date().toISOString(),
+            })),
             users: (userRes.data || []).map((row: any) => ({
               id: row.id,
               name: row.name,
@@ -948,10 +1275,11 @@ export async function pullDataFromSupabase(): Promise<{
       };
     }
 
+    const sanitizedPayload = stripDeletedFromPayload(pulledPayload, deletedMap);
     const timestamp = updatedAtStr ? new Date(updatedAtStr).toLocaleString('es-ES') : 'recientemente';
     return {
       success: true,
-      data: pulledPayload,
+      data: sanitizedPayload,
       message: `Datos cargados desde Supabase (actualizados ${timestamp}).`,
     };
   } catch (err: any) {
@@ -1089,8 +1417,9 @@ export async function fetchBiblicalCharactersOnline(): Promise<{
   }
 
   try {
-    let charactersMap = new Map<string, BiblicalCharacterRegistration>();
+    const charactersMap = new Map<string, BiblicalCharacterRegistration>();
     let pulledConfig: ContestCustomConfig | undefined = undefined;
+    let cloudDeletedIds: Record<string, number> = {};
 
     // 1. Try reading from church_store
     try {
@@ -1101,6 +1430,9 @@ export async function fetchBiblicalCharactersOnline(): Promise<{
         .maybeSingle();
 
       if (!storeError && storeData && storeData.data) {
+        if (storeData.data.deletedIds) {
+          cloudDeletedIds = storeData.data.deletedIds;
+        }
         if (storeData.data.contestConfig) {
           pulledConfig = storeData.data.contestConfig;
         }
@@ -1114,6 +1446,8 @@ export async function fetchBiblicalCharactersOnline(): Promise<{
       console.warn('Error reading church_store for characters:', e);
     }
 
+    const deletedMap = saveLocalDeletedIds(mergeDeletedIds(getLocalDeletedIds(), cloudDeletedIds));
+
     // 2. Try reading from biblical_characters table
     try {
       const { data: tableRows, error: tableError } = await client
@@ -1123,12 +1457,15 @@ export async function fetchBiblicalCharactersOnline(): Promise<{
 
       if (!tableError && Array.isArray(tableRows)) {
         tableRows.forEach((row: any) => {
+          if (!row || !row.id || deletedMap[row.id]) return;
+          const prev = charactersMap.get(row.id);
           charactersMap.set(row.id, {
+            ...prev,
             id: row.id,
             nombre: row.nombre,
             edad: row.edad || '',
             contacto: row.contacto,
-            iglesia: row.iglesia || '',
+            iglesia: row.iglesia || prev?.iglesia || '',
             personaje: row.personaje,
             escena: row.escena || '',
             utileria: row.utileria || '',
@@ -1144,7 +1481,7 @@ export async function fetchBiblicalCharactersOnline(): Promise<{
       console.warn('Error reading biblical_characters table:', e);
     }
 
-    const charactersList = Array.from(charactersMap.values());
+    const charactersList = Array.from(charactersMap.values()).filter((c) => !deletedMap[c.id]);
     return {
       success: true,
       characters: charactersList,
@@ -1158,3 +1495,486 @@ export async function fetchBiblicalCharactersOnline(): Promise<{
     };
   }
 }
+
+/**
+ * Update a biblical character registration in real time in both relational table and church_store.
+ */
+export async function updateBiblicalCharacterOnline(
+  reg: BiblicalCharacterRegistration
+): Promise<{ success: boolean; message: string }> {
+  return registerBiblicalCharacterOnline(reg);
+}
+
+/**
+ * Delete a biblical character registration permanently in real time from Supabase
+ * (removes from BOTH biblical_characters table and church_store).
+ */
+export async function deleteBiblicalCharacterOnline(
+  id: string
+): Promise<{ success: boolean; message: string }> {
+  return deleteRecordOnline('biblical_characters', id, 'biblicalCharacters');
+}
+
+/**
+ * Real-time delete of any single record by ID from its relational table AND from church_store.
+ */
+export async function deleteRecordOnline(
+  tableName: string,
+  id: string,
+  storeArrayKey?: keyof ChurchDataPayload
+): Promise<{ success: boolean; message: string }> {
+  const updatedLocalTombstones = recordLocalDeletedIds([id]);
+
+  const client = getSupabaseClient();
+  if (!client) {
+    return { success: false, message: 'No hay conexión con Supabase.' };
+  }
+
+  let tableDeleted = false;
+  let storeUpdated = false;
+  let errorDetail = '';
+
+  // 1. Delete immediately from relational table
+  try {
+    const { error } = await client.from(tableName).delete().eq('id', id);
+    if (!error) {
+      tableDeleted = true;
+    } else {
+      errorDetail = error.message;
+      console.warn(`Error eliminando de ${tableName}:`, error);
+    }
+  } catch (err: any) {
+    errorDetail = err?.message || 'Error de red';
+    console.warn(`Excepción eliminando de ${tableName}:`, err);
+  }
+
+  // 2. Immediately remove from church_store AND save deletedIds tombstone so no PC/tab resurrects it
+  try {
+    const { data: storeRow, error: readErr } = await client
+      .from('church_store')
+      .select('data')
+      .eq('id', 'main_church_data')
+      .maybeSingle();
+
+    if (!readErr && storeRow && storeRow.data) {
+      const mergedDeleted = saveLocalDeletedIds(
+        mergeDeletedIds(updatedLocalTombstones, storeRow.data.deletedIds)
+      );
+      const nextData: any = {
+        ...storeRow.data,
+        deletedIds: mergedDeleted,
+      };
+      if (storeArrayKey && Array.isArray(storeRow.data[storeArrayKey])) {
+        nextData[storeArrayKey] = (storeRow.data[storeArrayKey] as any[]).filter(
+          (item: any) => item?.id !== id
+        );
+      }
+
+      const { error: writeErr } = await client
+        .from('church_store')
+        .update({
+          data: nextData,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', 'main_church_data');
+
+      if (!writeErr) {
+        storeUpdated = true;
+      } else if (!errorDetail) {
+        errorDetail = writeErr.message;
+      }
+    } else if (!readErr) {
+      storeUpdated = true;
+    }
+  } catch (storeErr: any) {
+    console.warn('Error actualizando church_store tras eliminar:', storeErr);
+    if (!errorDetail) errorDetail = storeErr?.message || '';
+  }
+
+  if (tableDeleted || storeUpdated) {
+    return { success: true, message: 'Eliminado permanentemente en tiempo real de la base de datos.' };
+  }
+  return { success: false, message: errorDetail || 'No se pudo eliminar en Supabase.' };
+}
+
+/**
+ * Real-time cascading delete of a club and its related activities, transactions, shirts, and enrollments.
+ */
+export async function deleteClubCascadeOnline(clubId: string): Promise<{ success: boolean; message: string }> {
+  const localTombstones = recordLocalDeletedIds([clubId]);
+  const client = getSupabaseClient();
+  if (!client) return { success: false, message: 'No hay conexión con Supabase.' };
+
+  try {
+    await Promise.allSettled([
+      client.from('clubs').delete().eq('id', clubId),
+      client.from('club_activities').delete().eq('club_id', clubId),
+      client.from('club_transactions').delete().eq('club_id', clubId),
+      client.from('camporee_shirts').delete().eq('club_id', clubId),
+      client.from('club_enrollments').delete().eq('club_id', clubId),
+    ]);
+
+    const { data: storeRow } = await client
+      .from('church_store')
+      .select('data')
+      .eq('id', 'main_church_data')
+      .maybeSingle();
+
+    if (storeRow && storeRow.data) {
+      const d = storeRow.data;
+      const relatedIds = [
+        clubId,
+        ...((d.clubActivities || []).filter((a: any) => a.clubId === clubId).map((a: any) => a.id)),
+        ...((d.clubTransactions || []).filter((t: any) => t.clubId === clubId).map((t: any) => t.id)),
+        ...((d.camporeeShirts || []).filter((s: any) => s.clubId === clubId).map((s: any) => s.id)),
+        ...((d.clubEnrollments || []).filter((e: any) => e.clubId === clubId).map((e: any) => e.id)),
+      ];
+      const mergedDeleted = saveLocalDeletedIds(
+        mergeDeletedIds(localTombstones, recordLocalDeletedIds(relatedIds), d.deletedIds)
+      );
+
+      await client
+        .from('church_store')
+        .update({
+          data: {
+            ...d,
+            deletedIds: mergedDeleted,
+            clubs: (d.clubs || []).filter((c: any) => c.id !== clubId),
+            clubActivities: (d.clubActivities || []).filter((a: any) => a.clubId !== clubId),
+            clubTransactions: (d.clubTransactions || []).filter((t: any) => t.clubId !== clubId),
+            camporeeShirts: (d.camporeeShirts || []).filter((s: any) => s.clubId !== clubId),
+            clubEnrollments: (d.clubEnrollments || []).filter((e: any) => e.clubId !== clubId),
+          },
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', 'main_church_data');
+    }
+
+    return { success: true, message: 'Club eliminado en tiempo real.' };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Error eliminando club.' };
+  }
+}
+
+/**
+ * Real-time cascading delete of a club activity and its transactions.
+ */
+export async function deleteActivityCascadeOnline(activityId: string): Promise<{ success: boolean; message: string }> {
+  const localTombstones = recordLocalDeletedIds([activityId]);
+  const client = getSupabaseClient();
+  if (!client) return { success: false, message: 'No hay conexión con Supabase.' };
+
+  try {
+    await Promise.allSettled([
+      client.from('club_activities').delete().eq('id', activityId),
+      client.from('club_transactions').delete().eq('activity_id', activityId),
+    ]);
+
+    const { data: storeRow } = await client
+      .from('church_store')
+      .select('data')
+      .eq('id', 'main_church_data')
+      .maybeSingle();
+
+    if (storeRow && storeRow.data) {
+      const d = storeRow.data;
+      const relatedIds = [
+        activityId,
+        ...((d.clubTransactions || []).filter((t: any) => t.activityId === activityId).map((t: any) => t.id)),
+      ];
+      const mergedDeleted = saveLocalDeletedIds(
+        mergeDeletedIds(localTombstones, recordLocalDeletedIds(relatedIds), d.deletedIds)
+      );
+
+      await client
+        .from('church_store')
+        .update({
+          data: {
+            ...d,
+            deletedIds: mergedDeleted,
+            clubActivities: (d.clubActivities || []).filter((a: any) => a.id !== activityId),
+            clubTransactions: (d.clubTransactions || []).filter((t: any) => t.activityId !== activityId),
+          },
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', 'main_church_data');
+    }
+
+    return { success: true, message: 'Actividad eliminada en tiempo real.' };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Error eliminando actividad.' };
+  }
+}
+
+/**
+ * Helper to atomically merge a single item into an array inside church_store.data
+ */
+async function mergeSingleItemIntoChurchStore<T extends { id: string }>(
+  storeArrayKey: keyof ChurchDataPayload,
+  item: T
+): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const { data: storeRow, error: readErr } = await client
+      .from('church_store')
+      .select('data')
+      .eq('id', 'main_church_data')
+      .maybeSingle();
+
+    if (!readErr && storeRow && storeRow.data) {
+      const existingList: T[] = Array.isArray(storeRow.data[storeArrayKey])
+        ? (storeRow.data[storeArrayKey] as T[])
+        : [];
+      const updatedList = [item, ...existingList.filter((x) => x?.id !== item.id)];
+      const { error: writeErr } = await client
+        .from('church_store')
+        .update({
+          data: {
+            ...storeRow.data,
+            [storeArrayKey]: updatedList,
+          },
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', 'main_church_data');
+      return !writeErr;
+    } else if (!readErr) {
+      const { error: upsertErr } = await client
+        .from('church_store')
+        .upsert(
+          {
+            id: 'main_church_data',
+            data: {
+              version: 1,
+              exportedAt: new Date().toISOString(),
+              attendees: [],
+              events: [],
+              zones: [],
+              [storeArrayKey]: [item],
+            },
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'id' }
+        );
+      return !upsertErr;
+    }
+  } catch (err) {
+    console.warn(`Error actualizando church_store (${String(storeArrayKey)}):`, err);
+  }
+  return false;
+}
+
+/**
+ * Real-time save of a club enrollment into BOTH club_enrollments table and church_store.
+ */
+export async function saveClubEnrollmentOnline(
+  enrollment: ClubEnrollment
+): Promise<{ success: boolean; message: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, message: 'No hay conexión con Supabase.' };
+
+  let tableOk = false;
+  let errorMsg = '';
+
+  try {
+    const { error } = await client.from('club_enrollments').upsert(
+      {
+        id: enrollment.id,
+        club_id: enrollment.clubId,
+        club_name: enrollment.clubName,
+        member_name: enrollment.memberName,
+        period: enrollment.period || '2026',
+        category: enrollment.category || 'Conquistador',
+        tutor_name: enrollment.tutorName || '',
+        phone: enrollment.phone || '',
+        fee_amount: Number(enrollment.feeAmount) || 0,
+        amount_paid: Number(enrollment.amountPaid) || 0,
+        is_paid: !!enrollment.isPaid,
+        enrollment_date: enrollment.enrollmentDate,
+        receipt_number: enrollment.receiptNumber || '',
+        medical_notes: enrollment.medicalNotes || '',
+      },
+      { onConflict: 'id' }
+    );
+    if (!error) {
+      tableOk = true;
+    } else {
+      errorMsg = error.message;
+      console.warn('Error guardando en club_enrollments:', error);
+    }
+  } catch (err: any) {
+    errorMsg = err?.message || 'Error de red';
+  }
+
+  const storeOk = await mergeSingleItemIntoChurchStore('clubEnrollments', enrollment);
+  if (tableOk || storeOk) {
+    return { success: true, message: 'Matrícula guardada en tiempo real.' };
+  }
+  return { success: false, message: errorMsg || 'No se pudo guardar la matrícula.' };
+}
+
+/**
+ * Real-time save of a Camporee T-shirt order into BOTH camporee_shirts table and church_store.
+ */
+export async function saveCamporeeShirtOnline(
+  shirt: CamporeeShirtPayment
+): Promise<{ success: boolean; message: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, message: 'No hay conexión con Supabase.' };
+
+  let tableOk = false;
+  let errorMsg = '';
+
+  try {
+    const { error } = await client.from('camporee_shirts').upsert(
+      {
+        id: shirt.id,
+        club_id: shirt.clubId,
+        club_name: shirt.clubName,
+        person_name: shirt.personName,
+        size: shirt.size,
+        quantity: Number(shirt.quantity) || 1,
+        total_price: Number(shirt.totalPrice) || 0,
+        amount_paid: Number(shirt.amountPaid) || 0,
+        is_paid: !!shirt.isPaid,
+        payment_date: shirt.paymentDate,
+        phone: shirt.phone || '',
+        notes: shirt.notes || '',
+      },
+      { onConflict: 'id' }
+    );
+    if (!error) {
+      tableOk = true;
+    } else {
+      errorMsg = error.message;
+    }
+  } catch (err: any) {
+    errorMsg = err?.message || 'Error de red';
+  }
+
+  const storeOk = await mergeSingleItemIntoChurchStore('camporeeShirts', shirt);
+  if (tableOk || storeOk) {
+    return { success: true, message: 'Pedido de T-Shirt guardado en tiempo real.' };
+  }
+  return { success: false, message: errorMsg || 'No se pudo guardar la T-Shirt.' };
+}
+
+/**
+ * Real-time save of a Club into BOTH clubs table (with schema fallback) and church_store.
+ */
+export async function saveClubOnline(
+  club: Club
+): Promise<{ success: boolean; message: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, message: 'No hay conexión con Supabase.' };
+
+  let tableOk = false;
+  try {
+    const { error } = await client.from('clubs').upsert(
+      {
+        id: club.id,
+        name: club.name,
+        description: club.description || '',
+        color: club.color || 'blue',
+        director: club.director || '',
+        period: club.period || '2026',
+      },
+      { onConflict: 'id' }
+    );
+    if (!error) {
+      tableOk = true;
+    } else {
+      const { error: fallbackErr } = await client.from('clubs').upsert(
+        {
+          id: club.id,
+          name: club.name,
+          description: club.description || '',
+          color: club.color || 'blue',
+        },
+        { onConflict: 'id' }
+      );
+      if (!fallbackErr) tableOk = true;
+    }
+  } catch {}
+
+  const storeOk = await mergeSingleItemIntoChurchStore('clubs', club);
+  return {
+    success: tableOk || storeOk,
+    message: tableOk || storeOk ? 'Club guardado en tiempo real.' : 'Error guardando club.',
+  };
+}
+
+/**
+ * Real-time save of a Club Activity into BOTH club_activities table and church_store.
+ */
+export async function saveClubActivityOnline(
+  act: ClubActivity
+): Promise<{ success: boolean; message: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, message: 'No hay conexión con Supabase.' };
+
+  let tableOk = false;
+  try {
+    const { error } = await client.from('club_activities').upsert(
+      {
+        id: act.id,
+        club_id: act.clubId,
+        club_name: act.clubName,
+        name: act.name,
+        date: act.date,
+        description: act.description || '',
+        target_budget: Number(act.targetBudget) || 0,
+        status: act.status || 'planeada',
+      },
+      { onConflict: 'id' }
+    );
+    if (!error) tableOk = true;
+  } catch {}
+
+  const storeOk = await mergeSingleItemIntoChurchStore('clubActivities', act);
+  return {
+    success: tableOk || storeOk,
+    message: tableOk || storeOk ? 'Actividad guardada en tiempo real.' : 'Error guardando actividad.',
+  };
+}
+
+/**
+ * Real-time save of a Club Transaction into BOTH club_transactions table and church_store.
+ */
+export async function saveClubTransactionOnline(
+  tx: ClubTransaction
+): Promise<{ success: boolean; message: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, message: 'No hay conexión con Supabase.' };
+
+  let tableOk = false;
+  try {
+    const { error } = await client.from('club_transactions').upsert(
+      {
+        id: tx.id,
+        activity_id: tx.activityId,
+        activity_name: tx.activityName,
+        club_id: tx.clubId,
+        club_name: tx.clubName,
+        type: tx.type,
+        category: tx.category,
+        description: tx.description || '',
+        amount: Number(tx.amount) || 0,
+        date: tx.date,
+        payment_method: tx.paymentMethod || 'efectivo',
+        responsible_person: tx.responsiblePerson || '',
+        receipt_number: tx.receiptNumber || '',
+      },
+      { onConflict: 'id' }
+    );
+    if (!error) tableOk = true;
+  } catch {}
+
+  const storeOk = await mergeSingleItemIntoChurchStore('clubTransactions', tx);
+  return {
+    success: tableOk || storeOk,
+    message: tableOk || storeOk ? 'Movimiento guardado en tiempo real.' : 'Error guardando movimiento.',
+  };
+}
+

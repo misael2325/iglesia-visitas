@@ -91,19 +91,19 @@ export const PublicGalleryView: React.FC<PublicGalleryViewProps> = ({
   };
 
   return (
-    <div className={`min-h-screen ${darkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'} flex flex-col transition-colors duration-200`}>
+    <div className={`min-h-dvh pb-safe ${darkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'} flex flex-col transition-colors duration-200`}>
       {/* Toast Notification */}
       {downloadFeedback && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 bg-emerald-600 text-white text-xs font-bold rounded-2xl shadow-xl animate-in slide-in-from-bottom duration-200">
-          <ArrowDownToLine className="w-4 h-4" />
+        <div className="fixed bottom-6 left-4 right-4 sm:left-auto sm:right-6 z-50 flex items-center gap-2 px-4 py-3 bg-emerald-600 text-white text-xs font-bold rounded-2xl shadow-xl animate-in slide-in-from-bottom duration-200">
+          <ArrowDownToLine className="w-4 h-4 shrink-0" />
           <span>{downloadFeedback}</span>
         </div>
       )}
 
       {/* Public Header */}
-      <header className="sticky top-0 z-40 bg-slate-900 border-b border-slate-800 text-white shadow-md">
+      <header className="sticky top-0 z-40 pt-safe bg-slate-900 border-b border-slate-800 text-white shadow-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
+          <div className="flex items-center justify-between h-14 sm:h-16">
             {/* Wordmark */}
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-violet-600 flex items-center justify-center text-white shadow-xs">
@@ -314,34 +314,34 @@ export const PublicGalleryView: React.FC<PublicGalleryViewProps> = ({
           onClick={() => setLightboxPhoto(null)}
         >
           <div 
-            className="relative max-w-5xl w-full bg-slate-900 rounded-3xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
+            className="relative max-w-5xl w-full bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col max-h-[92dvh] pb-safe"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Top Lightbox Bar */}
-            <div className="px-5 py-3.5 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between text-white shrink-0">
-              <div className="min-w-0 pr-4">
+            <div className="px-3.5 sm:px-5 py-3 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between text-white shrink-0 gap-2">
+              <div className="min-w-0 pr-2">
                 <span className="text-[10px] uppercase font-black tracking-wider text-violet-400 bg-violet-950 px-2 py-0.5 rounded-md border border-violet-800">
                   {lightboxPhoto.album}
                 </span>
-                <h3 className="text-sm sm:text-base font-extrabold text-white truncate mt-0.5">
+                <h3 className="text-xs sm:text-base font-extrabold text-white truncate mt-0.5">
                   {lightboxPhoto.title}
                 </h3>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => handleDownload(lightboxPhoto)}
-                  className="px-3.5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md transition-all"
+                  className="min-h-[40px] px-3 sm:px-3.5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md transition-all"
                 >
                   <Download className="w-4 h-4" />
-                  <span>Descargar Foto</span>
+                  <span className="hidden xs:inline">Descargar</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setLightboxPhoto(null)}
-                  className="p-2 rounded-xl text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-750 transition-colors"
+                  className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-750 transition-colors"
                   title="Cerrar (Esc)"
                 >
                   <X className="w-5 h-5" />

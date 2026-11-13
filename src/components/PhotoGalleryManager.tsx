@@ -190,7 +190,7 @@ export const PhotoGalleryManager: React.FC<PhotoGalleryManagerProps> = ({
     <div className="space-y-6 animate-in fade-in duration-200">
       {/* Toast Feedback */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 bg-slate-900 dark:bg-slate-800 text-white text-xs font-semibold rounded-2xl shadow-xl border border-slate-700 animate-in slide-in-from-bottom">
+        <div className="fixed bottom-24 md:bottom-6 left-4 right-4 sm:left-auto sm:right-6 z-50 flex items-center gap-2 px-4 py-3 bg-slate-900 dark:bg-slate-800 text-white text-xs font-semibold rounded-2xl shadow-xl border border-slate-700 animate-in slide-in-from-bottom">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{toastMessage}</span>
         </div>
@@ -215,27 +215,28 @@ export const PhotoGalleryManager: React.FC<PhotoGalleryManagerProps> = ({
       />
 
       {/* 1. SECCIÓN SUPERIOR: TÍTULO FOTOS + BOTÓN VOLVER + ACCIONES */}
-      <div className="bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 shadow-md rounded-2xl sm:rounded-3xl p-4 sm:p-5 transition-all duration-200">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
-          <div className="flex items-center gap-3">
+      <div className="bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 shadow-md rounded-2xl sm:rounded-3xl p-3.5 sm:p-5 transition-all duration-200">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
+          <div className="flex items-center gap-2.5 sm:gap-3">
             <button
               type="button"
               onClick={onBackToPortal}
-              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-extrabold text-slate-800 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 border-2 border-slate-300 dark:border-slate-700 rounded-xl transition-all shadow-xs shrink-0"
+              className="min-h-[40px] flex items-center gap-1.5 px-3 sm:px-3.5 py-2 text-xs font-extrabold text-slate-800 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 border-2 border-slate-300 dark:border-slate-700 rounded-xl transition-all shadow-xs shrink-0"
               title="Volver al Menú Principal con los 3 módulos generales"
             >
               <ArrowLeft className="w-4 h-4 text-violet-600 dark:text-violet-400 shrink-0" />
-              <span>← Menú Principal</span>
+              <span className="hidden xs:inline">Menú</span>
+              <span className="hidden sm:inline">Principal</span>
             </button>
 
             <div className="h-7 w-[2px] bg-slate-300 dark:bg-slate-700 hidden sm:block" />
 
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] uppercase font-black tracking-wider text-violet-800 dark:text-violet-200 bg-violet-100 dark:bg-violet-950 px-2.5 py-0.5 rounded-md border border-violet-300 dark:border-violet-800">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] uppercase font-black tracking-wider text-violet-800 dark:text-violet-200 bg-violet-100 dark:bg-violet-950 px-2 py-0.5 rounded-md border border-violet-300 dark:border-violet-800">
                   Módulo General
                 </span>
-                <h1 className="text-lg sm:text-2xl font-black text-slate-950 dark:text-white tracking-tight">
+                <h1 className="text-base sm:text-2xl font-black text-slate-950 dark:text-white tracking-tight truncate">
                   Fotos de la Iglesia
                 </h1>
               </div>
@@ -246,14 +247,14 @@ export const PhotoGalleryManager: React.FC<PhotoGalleryManagerProps> = ({
           </div>
 
           {/* Acciones principales: Compartir Enlace y Subir Fotos */}
-          <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+          <div className="grid grid-cols-2 sm:flex items-center gap-2 shrink-0 w-full sm:w-auto">
             <button
               type="button"
               onClick={() => setIsShareModalOpen(true)}
-              className="px-3.5 py-2.5 text-xs font-extrabold text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/60 hover:bg-violet-100 dark:hover:bg-violet-900/80 border border-violet-300 dark:border-violet-800 rounded-xl transition-all shadow-xs flex items-center gap-1.5 whitespace-nowrap"
+              className="min-h-[42px] px-3 py-2 text-xs font-extrabold text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/60 hover:bg-violet-100 dark:hover:bg-violet-900/80 border border-violet-300 dark:border-violet-800 rounded-xl transition-all shadow-xs flex items-center justify-center gap-1.5 whitespace-nowrap"
             >
               <Share2 className="w-4 h-4 shrink-0 text-violet-600 dark:text-violet-400" />
-              <span>Compartir Enlace Público</span>
+              <span>Compartir</span>
             </button>
 
             <button
@@ -261,10 +262,10 @@ export const PhotoGalleryManager: React.FC<PhotoGalleryManagerProps> = ({
               onClick={() => {
                 if (fileInputRef.current) fileInputRef.current.click();
               }}
-              className="px-4 py-2.5 text-xs font-extrabold text-white bg-violet-600 hover:bg-violet-500 rounded-xl transition-all shadow-sm flex items-center gap-1.5 whitespace-nowrap active:scale-98"
+              className="min-h-[42px] px-3.5 py-2 text-xs font-extrabold text-white bg-violet-600 hover:bg-violet-500 rounded-xl transition-all shadow-sm flex items-center justify-center gap-1.5 whitespace-nowrap active:scale-98"
             >
               <Upload className="w-4 h-4 shrink-0" />
-              <span>+ Subir Fotos</span>
+              <span>Subir Fotos</span>
             </button>
           </div>
         </div>
@@ -897,12 +898,12 @@ export const PhotoGalleryManager: React.FC<PhotoGalleryManagerProps> = ({
             <label className="block text-xs font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
               Enlace Web Público Oficial:
             </label>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
               <input
                 type="text"
                 readOnly
                 value={publicShareUrl}
-                className="flex-1 px-3.5 py-2.5 rounded-xl text-xs font-mono bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 select-all focus:outline-none"
+                className="flex-1 px-3.5 py-2.5 min-h-[42px] rounded-xl text-xs font-mono bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 select-all focus:outline-none"
               />
               <button
                 type="button"
@@ -910,7 +911,7 @@ export const PhotoGalleryManager: React.FC<PhotoGalleryManagerProps> = ({
                   navigator.clipboard.writeText(publicShareUrl);
                   showToast('¡Enlace público copiado al portapapeles!');
                 }}
-                className="px-4 py-2.5 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-white text-xs font-extrabold flex items-center gap-1.5 transition-all shadow-xs shrink-0"
+                className="min-h-[42px] px-4 py-2.5 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-white text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all shadow-xs shrink-0"
               >
                 <Copy className="w-4 h-4 text-violet-300" />
                 <span>Copiar Enlace</span>
@@ -1021,28 +1022,28 @@ export const PhotoGalleryManager: React.FC<PhotoGalleryManagerProps> = ({
           onClick={() => setLightboxPhoto(null)}
         >
           <div 
-            className="relative max-w-5xl w-full bg-slate-900 rounded-3xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
+            className="relative max-w-5xl w-full bg-slate-900 rounded-2xl sm:rounded-3xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col max-h-[92dvh] pb-safe"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Top Lightbox Bar */}
-            <div className="px-5 py-3.5 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between text-white shrink-0">
-              <div className="min-w-0 pr-4">
+            <div className="px-3.5 sm:px-5 py-3 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between text-white shrink-0 gap-2">
+              <div className="min-w-0 pr-2">
                 <span className="text-[10px] uppercase font-black tracking-wider text-violet-400 bg-violet-950 px-2 py-0.5 rounded-md border border-violet-800">
                   {lightboxPhoto.album}
                 </span>
-                <h3 className="text-sm sm:text-base font-extrabold text-white truncate mt-0.5">
+                <h3 className="text-xs sm:text-base font-extrabold text-white truncate mt-0.5">
                   {lightboxPhoto.title}
                 </h3>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => handleDownload(lightboxPhoto)}
-                  className="px-3.5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md transition-all"
+                  className="min-h-[40px] px-3 sm:px-3.5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md transition-all"
                 >
                   <Download className="w-4 h-4" />
-                  <span>Descargar Foto</span>
+                  <span className="hidden xs:inline">Descargar</span>
                 </button>
 
                 {isAdmin && (
@@ -1055,7 +1056,7 @@ export const PhotoGalleryManager: React.FC<PhotoGalleryManagerProps> = ({
                         showToast('Foto eliminada.');
                       }
                     }}
-                    className="p-2 rounded-xl text-rose-400 hover:text-white hover:bg-rose-600/40 transition-colors"
+                    className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-rose-400 hover:text-white hover:bg-rose-600/40 transition-colors"
                     title="Eliminar foto"
                   >
                     <Trash2 className="w-5 h-5" />
@@ -1065,7 +1066,7 @@ export const PhotoGalleryManager: React.FC<PhotoGalleryManagerProps> = ({
                 <button
                   type="button"
                   onClick={() => setLightboxPhoto(null)}
-                  className="p-2 rounded-xl text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-750 transition-colors"
+                  className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-750 transition-colors"
                   title="Cerrar (Esc)"
                 >
                   <X className="w-5 h-5" />

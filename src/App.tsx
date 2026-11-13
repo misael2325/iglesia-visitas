@@ -23,6 +23,8 @@ import { PhotoGalleryManager } from './components/PhotoGalleryManager';
 import { PublicGalleryView } from './components/PublicGalleryView';
 import { PublicCharacterRegistrationView } from './components/PublicCharacterRegistrationView';
 import { BiblicalCharacterManager } from './components/BiblicalCharacterManager';
+import { PWAInstallBanner } from './components/PWAInstallBanner';
+import { usePWAInstall } from './hooks/usePWAInstall';
 import { 
   Attendee, 
   ChurchEvent, 
@@ -38,17 +40,31 @@ import {
   ClubEnrollment,
   BiblicalCharacterRegistration,
   ContestCustomConfig,
-  isSecretariaRole 
+  isSecretariaRole,
+  isDirectivaClubesRole
 } from './types';
 import { getWeekDays, formatLocalDate } from './utils/dateUtils';
 import { 
   getSupabaseConfig, 
+  getSupabaseClient,
   pushDataToSupabase, 
   pullDataFromSupabase,
   ChurchDataPayload,
   autoLinkSupabaseFromUrl,
   registerBiblicalCharacterOnline,
-  fetchBiblicalCharactersOnline
+  updateBiblicalCharacterOnline,
+  deleteBiblicalCharacterOnline,
+  fetchBiblicalCharactersOnline,
+  deleteRecordOnline,
+  deleteClubCascadeOnline,
+  deleteActivityCascadeOnline,
+  saveClubOnline,
+  saveClubActivityOnline,
+  saveClubTransactionOnline,
+  saveCamporeeShirtOnline,
+  saveClubEnrollmentOnline,
+  getLocalDeletedIds,
+  recordLocalDeletedIds
 } from './services/supabaseClient';
 import { 
   loadAllPhotos, 
@@ -374,6 +390,11 @@ export default function App() {
   const [whatsAppAttendee, setWhatsAppAttendee] = useState<Attendee | null>(null);
   const [whatsAppTemplate, setWhatsAppTemplate] = useState<'reminder' | 'welcome' | 'prayer'>('reminder');
 
+  // PWA install alert & guide modal
+  const { isInstallable, isInstalled, isIOS, isAndroid, install } = usePWAInstall();
+  const [showInstallBanner, setShowInstallBanner] = useState(true);
+  const [showInstallGuideModal, setShowInstallGuideModal] = useState(false);
+
   // Toast feedback
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -384,14 +405,19 @@ export default function App() {
     }, 2800);
   };
 
-  // Enforce role-based restrictions for 'secretaria'
+  // Enforce role-based restrictions for 'secretaria' and 'directiva_clubes'
   useEffect(() => {
     if (isSecretariaRole(currentUser?.role)) {
       if (currentTab === 'conferencias' || currentTab === 'estadisticas') {
         setCurrentTab('asistencia');
       }
     }
-  }, [currentUser, currentTab]);
+    if (isDirectivaClubesRole(currentUser?.role)) {
+      if (activeModule !== 'clubes') {
+        setActiveModule('clubes');
+      }
+    }
+  }, [currentUser, currentTab, activeModule]);
 
   // Sync to localStorage
   useEffect(() => {
@@ -463,83 +489,241 @@ export default function App() {
     }
   }, [activeEventId]);
 
-  // 1. Initial Cloud Sync on Startup: When opening on another device or computer,
-  // automatically pull existing church data and photos from Supabase.
-  const hasPulledCloudOnStartup = useRef(false);
+  // 1. Initial Cloud Sync + Real-Time Sync across any PC/Device
+  const hasCompletedInitialPullRef = useRef(false);
+  const isPullingCloudRef = useRef(false);
+  const recentlyDeletedIdsRef = useRef<Map<string, number>>(new Map());
+  const pendingSaveIdsRef = useRef<Set<string>>(new Set());
+  const pendingDeleteIdsRef = useRef<Set<string>>(new Set());
+  const localMutationVersionRef = useRef(0);
+  const lastPushedVersionRef = useRef(0);
 
-  useEffect(() => {
-    if (hasPulledCloudOnStartup.current) return;
-    const config = getSupabaseConfig();
-    if (!config.anonKey) {
-      hasPulledCloudOnStartup.current = true;
-      return;
+  const markLocalMutation = () => {
+    localMutationVersionRef.current += 1;
+  };
+
+  const markDeletedId = (id: string) => {
+    recentlyDeletedIdsRef.current.set(id, Date.now());
+    recordLocalDeletedIds([id]);
+  };
+
+  const pruneDeletedIds = () => {
+    const now = Date.now();
+    for (const [id, ts] of recentlyDeletedIdsRef.current.entries()) {
+      if (now - ts > 30000) recentlyDeletedIdsRef.current.delete(id);
+    }
+  };
+
+  const mergeCloudArray = <T extends { id: string }>(
+    cloudArr: T[] | undefined,
+    localPrev: T[]
+  ): T[] | null => {
+    if (!Array.isArray(cloudArr)) return null;
+    pruneDeletedIds();
+    const persistedDeleted = getLocalDeletedIds();
+    const filteredCloud = cloudArr.filter(
+      (item) =>
+        !recentlyDeletedIdsRef.current.has(item.id) &&
+        !pendingDeleteIdsRef.current.has(item.id) &&
+        !persistedDeleted[item.id]
+    );
+    const map = new Map<string, T>();
+    filteredCloud.forEach((item) => map.set(item.id, item));
+    localPrev.forEach((item) => {
+      if (pendingSaveIdsRef.current.has(item.id) && !map.has(item.id)) {
+        map.set(item.id, item);
+      }
+    });
+    return Array.from(map.values());
+  };
+
+  const applyCloudSnapshot = (cloudData: ChurchDataPayload, showSummaryToast = false) => {
+    const summary: string[] = [];
+
+    if (Array.isArray(cloudData.attendees)) {
+      setAttendees((prev) => mergeCloudArray(cloudData.attendees, prev) ?? prev);
+      if (cloudData.attendees.length > 0) summary.push(`${cloudData.attendees.length} asistentes`);
+    }
+    if (Array.isArray(cloudData.events)) {
+      setEvents((prev) => mergeCloudArray(cloudData.events, prev) ?? prev);
+      if (cloudData.events.length > 0) summary.push(`${cloudData.events.length} cultos`);
+    }
+    if (Array.isArray(cloudData.clubs)) {
+      setClubs((prev) => mergeCloudArray(cloudData.clubs, prev) ?? prev);
+    }
+    if (Array.isArray(cloudData.clubActivities)) {
+      setClubActivities((prev) => mergeCloudArray(cloudData.clubActivities, prev) ?? prev);
+    }
+    if (Array.isArray(cloudData.clubTransactions)) {
+      setClubTransactions((prev) => mergeCloudArray(cloudData.clubTransactions, prev) ?? prev);
+    }
+    if (Array.isArray(cloudData.camporeeShirts)) {
+      setCamporeeShirts((prev) => mergeCloudArray(cloudData.camporeeShirts, prev) ?? prev);
+      if (cloudData.camporeeShirts.length > 0) summary.push(`${cloudData.camporeeShirts.length} camisetas`);
+    }
+    if (Array.isArray(cloudData.clubEnrollments)) {
+      setClubEnrollments((prev) => mergeCloudArray(cloudData.clubEnrollments, prev) ?? prev);
+      if (cloudData.clubEnrollments.length > 0) summary.push(`${cloudData.clubEnrollments.length} matrículas`);
+    }
+    if (Array.isArray(cloudData.zones) && cloudData.zones.length > 0) {
+      setZones(cloudData.zones);
+    }
+    if (Array.isArray(cloudData.users) && cloudData.users.length > 0) {
+      setUsers((prev) => mergeCloudArray(cloudData.users, prev) ?? prev);
+    }
+    if (Array.isArray(cloudData.photoAlbums) && cloudData.photoAlbums.length > 0) {
+      setPhotoAlbums(cloudData.photoAlbums);
+    }
+    if (Array.isArray(cloudData.photos)) {
+      setPhotos((prev) => {
+        const merged = mergeCloudArray(cloudData.photos, prev) ?? prev;
+        saveAllPhotos(merged).catch(console.error);
+        return merged;
+      });
+      if (cloudData.photos.length > 0) summary.push(`${cloudData.photos.length} fotos`);
+    }
+    if (Array.isArray(cloudData.biblicalCharacters)) {
+      setBiblicalCharacters((prev) => {
+        const merged = mergeCloudArray(cloudData.biblicalCharacters, prev) ?? prev;
+        return merged.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+      });
+      if (cloudData.biblicalCharacters.length > 0) {
+        summary.push(`${cloudData.biblicalCharacters.length} personajes bíblicos`);
+      }
+    }
+    if (cloudData.contestConfig) {
+      setContestConfig(cloudData.contestConfig);
     }
 
-    hasPulledCloudOnStartup.current = true;
+    if (showSummaryToast && summary.length > 0) {
+      showToast(`☁️ Base de datos sincronizada (${summary.join(', ')})`);
+    }
+  };
 
-    pullDataFromSupabase().then((res) => {
+  const syncFromCloudNow = async (showSummaryToast = false) => {
+    if (isPullingCloudRef.current) return;
+    isPullingCloudRef.current = true;
+    try {
+      const res = await pullDataFromSupabase();
       if (res.success && res.data) {
-        const cloudData = res.data;
-        const summary: string[] = [];
-
-        if (cloudData.attendees && cloudData.attendees.length > 0) {
-          setAttendees(cloudData.attendees);
-          summary.push(`${cloudData.attendees.length} asistentes`);
-        }
-        if (cloudData.events && cloudData.events.length > 0) {
-          setEvents(cloudData.events);
-          summary.push(`${cloudData.events.length} cultos`);
-        }
-        if (cloudData.clubs && cloudData.clubs.length > 0) {
-          setClubs(cloudData.clubs);
-        }
-        if (cloudData.clubActivities && cloudData.clubActivities.length > 0) {
-          setClubActivities(cloudData.clubActivities);
-        }
-        if (cloudData.clubTransactions && cloudData.clubTransactions.length > 0) {
-          setClubTransactions(cloudData.clubTransactions);
-        }
-        if (cloudData.camporeeShirts && cloudData.camporeeShirts.length > 0) {
-          setCamporeeShirts(cloudData.camporeeShirts);
-          summary.push(`${cloudData.camporeeShirts.length} camisetas`);
-        }
-        if (cloudData.clubEnrollments && cloudData.clubEnrollments.length > 0) {
-          setClubEnrollments(cloudData.clubEnrollments);
-          summary.push(`${cloudData.clubEnrollments.length} matrículas`);
-        }
-        if (cloudData.zones && cloudData.zones.length > 0) {
-          setZones(cloudData.zones);
-        }
-        if (cloudData.users && cloudData.users.length > 0) {
-          setUsers(cloudData.users);
-        }
-        if (cloudData.photoAlbums && cloudData.photoAlbums.length > 0) {
-          setPhotoAlbums(cloudData.photoAlbums);
-        }
-        if (cloudData.photos && cloudData.photos.length > 0) {
-          setPhotos(cloudData.photos);
-          saveAllPhotos(cloudData.photos).catch(console.error);
-          summary.push(`${cloudData.photos.length} fotos`);
-        }
-        if (cloudData.biblicalCharacters && cloudData.biblicalCharacters.length > 0) {
-          setBiblicalCharacters(cloudData.biblicalCharacters);
-          summary.push(`${cloudData.biblicalCharacters.length} personajes bíblicos`);
-        }
-        if (cloudData.contestConfig) {
-          setContestConfig(cloudData.contestConfig);
-        }
-
-        if (summary.length > 0) {
-          showToast(`☁️ Base de datos Supabase sincronizada (${summary.join(', ')})`);
-        }
+        applyCloudSnapshot(res.data, showSummaryToast);
       }
-    }).catch(console.error);
+    } catch (err) {
+      console.error('Cloud sync pull error:', err);
+    } finally {
+      isPullingCloudRef.current = false;
+    }
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+    syncFromCloudNow(true).finally(() => {
+      if (isMounted) {
+        hasCompletedInitialPullRef.current = true;
+      }
+    });
+
+    // Real-time Supabase channel subscription across all PCs
+    const client = getSupabaseClient();
+    const channel = client
+      ? client
+          .channel('eclesia-realtime-sync')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'church_store' },
+            () => {
+              if (
+                hasCompletedInitialPullRef.current &&
+                pendingSaveIdsRef.current.size === 0 &&
+                pendingDeleteIdsRef.current.size === 0
+              ) {
+                syncFromCloudNow(false);
+              }
+            }
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'biblical_characters' },
+            () => {
+              if (
+                hasCompletedInitialPullRef.current &&
+                pendingSaveIdsRef.current.size === 0 &&
+                pendingDeleteIdsRef.current.size === 0
+              ) {
+                handleRefreshCharacters();
+              }
+            }
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'club_enrollments' },
+            () => {
+              if (
+                hasCompletedInitialPullRef.current &&
+                pendingSaveIdsRef.current.size === 0 &&
+                pendingDeleteIdsRef.current.size === 0
+              ) {
+                syncFromCloudNow(false);
+              }
+            }
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'camporee_shirts' },
+            () => {
+              if (
+                hasCompletedInitialPullRef.current &&
+                pendingSaveIdsRef.current.size === 0 &&
+                pendingDeleteIdsRef.current.size === 0
+              ) {
+                syncFromCloudNow(false);
+              }
+            }
+          )
+          .subscribe()
+      : null;
+
+    // Also pull fresh data when switching back to this tab/window
+    const handleFocusSync = () => {
+      if (
+        hasCompletedInitialPullRef.current &&
+        document.visibilityState !== 'hidden' &&
+        pendingSaveIdsRef.current.size === 0 &&
+        pendingDeleteIdsRef.current.size === 0
+      ) {
+        syncFromCloudNow(false);
+      }
+    };
+    window.addEventListener('focus', handleFocusSync);
+    document.addEventListener('visibilitychange', handleFocusSync);
+
+    // Background heartbeat sync every 20s for real-time parity across PCs
+    const interval = setInterval(() => {
+      if (
+        hasCompletedInitialPullRef.current &&
+        pendingSaveIdsRef.current.size === 0 &&
+        pendingDeleteIdsRef.current.size === 0
+      ) {
+        syncFromCloudNow(false);
+      }
+    }, 20000);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener('focus', handleFocusSync);
+      document.removeEventListener('visibilitychange', handleFocusSync);
+      clearInterval(interval);
+      if (channel && client) {
+        client.removeChannel(channel);
+      }
+    };
   }, []);
 
-  // 2. Cloud Auto-Sync with debounce: Pushes local changes to Supabase in the background
+  // 2. Cloud Auto-Sync with fast debounce (600ms): ONLY pushes on real local mutations, never after cloud pulls
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
-    if (!hasPulledCloudOnStartup.current) return;
+    if (!hasCompletedInitialPullRef.current) return;
+    if (localMutationVersionRef.current === lastPushedVersionRef.current) return;
 
     const config = getSupabaseConfig();
     if (!config.autoSync || !config.anonKey) return;
@@ -547,6 +731,8 @@ export default function App() {
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
 
     syncTimeoutRef.current = setTimeout(async () => {
+      if (isPullingCloudRef.current || pendingDeleteIdsRef.current.size > 0) return;
+      const targetVersion = localMutationVersionRef.current;
       const payload: ChurchDataPayload = {
         version: 1,
         exportedAt: new Date().toISOString(),
@@ -563,9 +749,13 @@ export default function App() {
         clubEnrollments,
         biblicalCharacters,
         contestConfig,
+        deletedIds: getLocalDeletedIds(),
       };
-      await pushDataToSupabase(payload);
-    }, 2500);
+      const res = await pushDataToSupabase(payload);
+      if (res.success) {
+        lastPushedVersionRef.current = targetVersion;
+      }
+    }, 600);
 
     return () => {
       if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
@@ -581,6 +771,7 @@ export default function App() {
 
   // Synchronized Attendance Handler: Attendance Matrix <-> Conferences <-> Reports <-> Stats
   const handleToggleDayAttendance = (attendeeId: string, dateString: string) => {
+    markLocalMutation();
     let willBeAttended = false;
 
     setAttendees((prev) =>
@@ -630,6 +821,7 @@ export default function App() {
     const targetEvent = events.find((e) => e.id === eventId);
     if (!targetEvent) return;
 
+    markLocalMutation();
     const alreadyAttending = targetEvent.attendees && targetEvent.attendees.includes(attendeeId);
 
     setEvents((prev) =>
@@ -671,6 +863,7 @@ export default function App() {
 
   // Add new attendee
   const handleAddAttendee = (newAttendee: Attendee, markCurrentEvent?: boolean) => {
+    markLocalMutation();
     if (newAttendee.zone && !zones.includes(newAttendee.zone)) {
       setZones((prev) => [...prev, newAttendee.zone]);
     }
@@ -691,6 +884,7 @@ export default function App() {
 
   // Update attendee
   const handleUpdateAttendee = (updated: Attendee) => {
+    markLocalMutation();
     if (updated.zone && !zones.includes(updated.zone)) {
       setZones((prev) => [...prev, updated.zone]);
     }
@@ -698,8 +892,10 @@ export default function App() {
     showToast(`Datos actualizados correctamente`);
   };
 
-  // Delete attendee
+  // Delete attendee (real-time relational + store)
   const handleDeleteAttendee = (id: string) => {
+    markDeletedId(id);
+    pendingDeleteIdsRef.current.add(id);
     setAttendees((prev) => prev.filter((a) => a.id !== id));
     setEvents((prev) =>
       prev.map((evt) => ({
@@ -707,22 +903,31 @@ export default function App() {
         attendees: evt.attendees.filter((attId) => attId !== id),
       }))
     );
-    showToast(`Registro eliminado`);
+    deleteRecordOnline('attendees', id, 'attendees')
+      .catch(console.error)
+      .finally(() => pendingDeleteIdsRef.current.delete(id));
+    showToast(`Registro eliminado de la base de datos`);
   };
 
   // Add event
   const handleAddEvent = (newEvent: ChurchEvent) => {
+    markLocalMutation();
     setEvents((prev) => [newEvent, ...prev]);
     setActiveEventId(newEvent.id);
     showToast(`Actividad "${newEvent.title}" creada y activada`);
   };
 
-  // Delete event
+  // Delete event (real-time relational + store)
   const handleDeleteEvent = (eventId: string) => {
+    markDeletedId(eventId);
+    pendingDeleteIdsRef.current.add(eventId);
     setEvents((prev) => prev.filter((e) => e.id !== eventId));
     if (activeEventId === eventId) setActiveEventId(null);
     if (reportEventId === eventId) setReportEventId(null);
-    showToast(`Conferencia eliminada`);
+    deleteRecordOnline('church_events', eventId, 'events')
+      .catch(console.error)
+      .finally(() => pendingDeleteIdsRef.current.delete(eventId));
+    showToast(`Conferencia eliminada de la base de datos`);
   };
 
   // Open WhatsApp with specific template
@@ -733,11 +938,18 @@ export default function App() {
 
   // Club Handlers
   const handleAddClub = (newClub: Club) => {
+    markLocalMutation();
+    pendingSaveIdsRef.current.add(newClub.id);
     setClubs((prev) => [...prev, newClub]);
-    showToast(`Club "${newClub.name}" creado con éxito.`);
+    saveClubOnline(newClub)
+      .catch(console.error)
+      .finally(() => pendingSaveIdsRef.current.delete(newClub.id));
+    showToast(`Club "${newClub.name}" creado y guardado en tiempo real.`);
   };
 
   const handleUpdateClub = (updated: Club) => {
+    markLocalMutation();
+    pendingSaveIdsRef.current.add(updated.id);
     setClubs((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
     setClubActivities((prev) =>
       prev.map((a) => (a.clubId === updated.id ? { ...a, clubName: updated.name } : a))
@@ -751,25 +963,43 @@ export default function App() {
     setClubEnrollments((prev) =>
       prev.map((e) => (e.clubId === updated.id ? { ...e, clubName: updated.name } : e))
     );
+    saveClubOnline(updated)
+      .catch(console.error)
+      .finally(() => pendingSaveIdsRef.current.delete(updated.id));
     showToast(`Club "${updated.name}" actualizado.`);
   };
 
   const handleDeleteClub = (clubId: string) => {
+    markDeletedId(clubId);
+    pendingDeleteIdsRef.current.add(clubId);
     setClubs((prev) => prev.filter((c) => c.id !== clubId));
     setClubActivities((prev) => prev.filter((a) => a.clubId !== clubId));
     setClubTransactions((prev) => prev.filter((t) => t.clubId !== clubId));
     setCamporeeShirts((prev) => prev.filter((s) => s.clubId !== clubId));
     setClubEnrollments((prev) => prev.filter((e) => e.clubId !== clubId));
-    showToast(`Club y sus registros asociados eliminados.`);
+    deleteClubCascadeOnline(clubId)
+      .catch(console.error)
+      .finally(() => pendingDeleteIdsRef.current.delete(clubId));
+    showToast(`Club y sus registros eliminados en tiempo real.`);
   };
 
   const handleAddClubActivity = (newAct: ClubActivity) => {
+    markLocalMutation();
+    pendingSaveIdsRef.current.add(newAct.id);
     setClubActivities((prev) => [newAct, ...prev]);
-    showToast(`Actividad "${newAct.name}" registrada.`);
+    saveClubActivityOnline(newAct)
+      .catch(console.error)
+      .finally(() => pendingSaveIdsRef.current.delete(newAct.id));
+    showToast(`Actividad "${newAct.name}" registrada en tiempo real.`);
   };
 
   const handleAddClubTransaction = (newTx: ClubTransaction) => {
+    markLocalMutation();
+    pendingSaveIdsRef.current.add(newTx.id);
     setClubTransactions((prev) => [newTx, ...prev]);
+    saveClubTransactionOnline(newTx)
+      .catch(console.error)
+      .finally(() => pendingSaveIdsRef.current.delete(newTx.id));
     showToast(
       newTx.type === 'ingreso'
         ? `Ingreso de $${newTx.amount} registrado en ${newTx.activityName}`
@@ -778,50 +1008,91 @@ export default function App() {
   };
 
   const handleDeleteClubTransaction = (txId: string) => {
+    markDeletedId(txId);
+    pendingDeleteIdsRef.current.add(txId);
     setClubTransactions((prev) => prev.filter((t) => t.id !== txId));
-    showToast(`Movimiento eliminado.`);
+    deleteRecordOnline('club_transactions', txId, 'clubTransactions')
+      .catch(console.error)
+      .finally(() => pendingDeleteIdsRef.current.delete(txId));
+    showToast(`Movimiento eliminado en tiempo real.`);
   };
 
   const handleDeleteClubActivity = (actId: string) => {
+    markDeletedId(actId);
+    pendingDeleteIdsRef.current.add(actId);
     setClubActivities((prev) => prev.filter((a) => a.id !== actId));
     setClubTransactions((prev) => prev.filter((t) => t.activityId !== actId));
-    showToast(`Actividad y sus movimientos eliminados.`);
+    deleteActivityCascadeOnline(actId)
+      .catch(console.error)
+      .finally(() => pendingDeleteIdsRef.current.delete(actId));
+    showToast(`Actividad y sus movimientos eliminados en tiempo real.`);
   };
 
   // Camporee T-Shirt Handlers
   const handleAddCamporeeShirt = (newShirt: CamporeeShirtPayment) => {
+    markLocalMutation();
+    pendingSaveIdsRef.current.add(newShirt.id);
     setCamporeeShirts((prev) => [newShirt, ...prev]);
+    saveCamporeeShirtOnline(newShirt)
+      .catch(console.error)
+      .finally(() => pendingSaveIdsRef.current.delete(newShirt.id));
     showToast(`T-Shirt registrada para ${newShirt.personName}.`);
   };
 
   const handleUpdateCamporeeShirt = (updated: CamporeeShirtPayment) => {
+    markLocalMutation();
+    pendingSaveIdsRef.current.add(updated.id);
     setCamporeeShirts((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+    saveCamporeeShirtOnline(updated)
+      .catch(console.error)
+      .finally(() => pendingSaveIdsRef.current.delete(updated.id));
     showToast(updated.isPaid ? `T-Shirt de ${updated.personName} marcada como PAGADA.` : `T-Shirt actualizada.`);
   };
 
   const handleDeleteCamporeeShirt = (id: string) => {
+    markDeletedId(id);
+    pendingDeleteIdsRef.current.add(id);
     setCamporeeShirts((prev) => prev.filter((s) => s.id !== id));
-    showToast(`Pedido de T-Shirt eliminado.`);
+    deleteRecordOnline('camporee_shirts', id, 'camporeeShirts')
+      .catch(console.error)
+      .finally(() => pendingDeleteIdsRef.current.delete(id));
+    showToast(`Pedido de T-Shirt eliminado en tiempo real.`);
   };
 
   // Club Enrollment Handlers
   const handleAddClubEnrollment = (newEnrollment: ClubEnrollment) => {
+    markLocalMutation();
+    pendingSaveIdsRef.current.add(newEnrollment.id);
     setClubEnrollments((prev) => [newEnrollment, ...prev]);
-    showToast(`Matrícula registrada para ${newEnrollment.memberName}.`);
+    saveClubEnrollmentOnline(newEnrollment)
+      .catch(console.error)
+      .finally(() => pendingSaveIdsRef.current.delete(newEnrollment.id));
+    showToast(`Matrícula registrada y guardada para ${newEnrollment.memberName}.`);
   };
 
   const handleUpdateClubEnrollment = (updated: ClubEnrollment) => {
+    markLocalMutation();
+    pendingSaveIdsRef.current.add(updated.id);
     setClubEnrollments((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+    saveClubEnrollmentOnline(updated)
+      .catch(console.error)
+      .finally(() => pendingSaveIdsRef.current.delete(updated.id));
     showToast(updated.isPaid ? `Matrícula de ${updated.memberName} marcada como PAGADA.` : `Matrícula actualizada.`);
   };
 
   const handleDeleteClubEnrollment = (id: string) => {
+    markDeletedId(id);
+    pendingDeleteIdsRef.current.add(id);
     setClubEnrollments((prev) => prev.filter((e) => e.id !== id));
-    showToast(`Matrícula eliminada.`);
+    deleteRecordOnline('club_enrollments', id, 'clubEnrollments')
+      .catch(console.error)
+      .finally(() => pendingDeleteIdsRef.current.delete(id));
+    showToast(`Matrícula eliminada en tiempo real.`);
   };
 
   // Photos Handlers
   const handleAddPhotos = (newPhotos: ChurchPhoto[]) => {
+    markLocalMutation();
     setPhotos((prev) => {
       const updated = [...newPhotos, ...prev];
       saveAllPhotos(updated).catch(console.error);
@@ -831,15 +1102,21 @@ export default function App() {
   };
 
   const handleDeletePhoto = (photoId: string) => {
+    markDeletedId(photoId);
+    pendingDeleteIdsRef.current.add(photoId);
     setPhotos((prev) => {
       const updated = prev.filter((p) => p.id !== photoId);
       saveAllPhotos(updated).catch(console.error);
       return updated;
     });
-    showToast(`Foto eliminada.`);
+    deleteRecordOnline('church_photos', photoId, 'photos')
+      .catch(console.error)
+      .finally(() => pendingDeleteIdsRef.current.delete(photoId));
+    showToast(`Foto eliminada de la nube.`);
   };
 
   const handleAddAlbum = (newAlbum: PhotoAlbum) => {
+    markLocalMutation();
     setPhotoAlbums((prev) => {
       const updated = [...prev, newAlbum];
       try {
@@ -851,17 +1128,23 @@ export default function App() {
     });
   };
 
-  // Biblical Characters Contest Handlers
+  // Biblical Characters Contest Handlers (Real-time Save, Edit, Delete)
   const handleAddCharacterRegistration = async (newReg: BiblicalCharacterRegistration) => {
+    recentlyDeletedIdsRef.current.delete(newReg.id);
+    pendingSaveIdsRef.current.add(newReg.id);
     setBiblicalCharacters((prev) => [newReg, ...prev.filter((c) => c.id !== newReg.id)]);
     showToast(`¡Inscripción de ${newReg.nombre} guardada con éxito!`);
     try {
       const res = await registerBiblicalCharacterOnline(newReg);
       if (!res.success) {
         console.warn('Registro en línea advertencia:', res.message);
+        markLocalMutation();
       }
     } catch (e) {
       console.warn('Auto-save to Supabase warning:', e);
+      markLocalMutation();
+    } finally {
+      pendingSaveIdsRef.current.delete(newReg.id);
     }
     return true;
   };
@@ -870,11 +1153,24 @@ export default function App() {
     try {
       const result = await fetchBiblicalCharactersOnline();
       if (result.success && result.characters) {
+        pruneDeletedIds();
+        const persistedDeleted = getLocalDeletedIds();
         setBiblicalCharacters((prev) => {
           const map = new Map<string, BiblicalCharacterRegistration>();
-          result.characters!.forEach((c) => map.set(c.id, c));
+          result.characters!.forEach((c) => {
+            if (
+              !recentlyDeletedIdsRef.current.has(c.id) &&
+              !pendingDeleteIdsRef.current.has(c.id) &&
+              !persistedDeleted[c.id]
+            ) {
+              map.set(c.id, c);
+            }
+          });
+          // Only keep items that are actively saving right now; deleted items on server stay deleted!
           prev.forEach((c) => {
-            if (!map.has(c.id)) map.set(c.id, c);
+            if (pendingSaveIdsRef.current.has(c.id) && !map.has(c.id)) {
+              map.set(c.id, c);
+            }
           });
           return Array.from(map.values()).sort(
             (a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()
@@ -889,33 +1185,74 @@ export default function App() {
     }
   };
 
-  const handleUpdateCharacterRegistration = (updated: BiblicalCharacterRegistration) => {
+  const handleUpdateCharacterRegistration = async (updated: BiblicalCharacterRegistration) => {
+    pendingSaveIdsRef.current.add(updated.id);
     setBiblicalCharacters((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+    try {
+      const res = await updateBiblicalCharacterOnline(updated);
+      if (!res.success) {
+        markLocalMutation();
+        showToast('Advertencia: no se pudo confirmar actualización en la nube.');
+      }
+    } catch (e) {
+      console.error('Error updating biblical character:', e);
+      markLocalMutation();
+    } finally {
+      pendingSaveIdsRef.current.delete(updated.id);
+    }
   };
 
-  const handleDeleteCharacterRegistration = (id: string) => {
+  const handleDeleteCharacterRegistration = async (id: string) => {
+    markDeletedId(id);
+    pendingDeleteIdsRef.current.add(id);
+    pendingSaveIdsRef.current.delete(id);
     setBiblicalCharacters((prev) => prev.filter((c) => c.id !== id));
-    showToast('Inscripción eliminada.');
+    try {
+      const res = await deleteBiblicalCharacterOnline(id);
+      if (res.success) {
+        showToast('Inscripción eliminada permanentemente de la base de datos.');
+      } else {
+        showToast(`Aviso al eliminar en nube: ${res.message}`);
+      }
+    } catch (e) {
+      console.error('Error deleting biblical character:', e);
+      showToast('Inscripción eliminada localmente.');
+    } finally {
+      pendingDeleteIdsRef.current.delete(id);
+    }
+  };
+
+  const handleUpdateContestConfig = (nextConfig: ContestCustomConfig) => {
+    markLocalMutation();
+    setContestConfig(nextConfig);
   };
 
   // User Authentication & Management Handlers
   const handleRegisterUser = (newUser: AppUser) => {
+    markLocalMutation();
     setUsers((prev) => [...prev, newUser]);
     showToast(`Usuario "${newUser.name}" registrado.`);
     return { success: true, message: 'Usuario creado exitosamente', user: newUser };
   };
 
   const handleAddUserFromAdmin = (newUser: AppUser) => {
+    markLocalMutation();
     setUsers((prev) => [...prev, newUser]);
     showToast(`Usuario "${newUser.name}" añadido al equipo.`);
   };
 
   const handleDeleteUser = (userId: string) => {
+    markDeletedId(userId);
+    pendingDeleteIdsRef.current.add(userId);
     setUsers((prev) => prev.filter((u) => u.id !== userId));
-    showToast(`Usuario eliminado del sistema.`);
+    deleteRecordOnline('app_users', userId, 'users')
+      .catch(console.error)
+      .finally(() => pendingDeleteIdsRef.current.delete(userId));
+    showToast(`Usuario eliminado del sistema y de la nube.`);
   };
 
   const handleUpdateUserRole = (userId: string, newRole: UserRole) => {
+    markLocalMutation();
     setUsers((prev) =>
       prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
     );
@@ -926,6 +1263,7 @@ export default function App() {
   };
 
   const handleResetPassword = (userId: string, newPass: string) => {
+    markLocalMutation();
     setUsers((prev) =>
       prev.map((u) => (u.id === userId ? { ...u, password: newPass } : u))
     );
@@ -937,7 +1275,8 @@ export default function App() {
 
   const handleLoginSuccess = (user: AppUser) => {
     setCurrentUser(user);
-    setActiveModule('portal'); // Entrada de Eclesia: los dos grandes menús generales
+    setActiveModule(isDirectivaClubesRole(user.role) ? 'clubes' : 'portal');
+    setShowInstallBanner(true);
     setUsers((prev) =>
       prev.map((u) => (u.id === user.id ? { ...u, lastLogin: user.lastLogin } : u))
     );
@@ -946,11 +1285,14 @@ export default function App() {
 
   const handleLogout = () => {
     setCurrentUser(null);
+    setShowInstallBanner(true);
+    setShowInstallGuideModal(false);
     showToast(`Sesión cerrada.`);
   };
 
   // Restore from JSON payload
   const handleRestoreData = (payload: ChurchDataPayload, mode: 'replace' | 'merge') => {
+    markLocalMutation();
     if (mode === 'replace') {
       setAttendees(payload.attendees || []);
       setEvents(payload.events || []);
@@ -1088,26 +1430,52 @@ export default function App() {
     );
   }
 
+  const isDirectivaClubes = isDirectivaClubesRole(currentUser.role);
+  const effectiveModule: AppModule = isDirectivaClubes ? 'clubes' : activeModule;
+
   return (
-    <div className={`min-h-screen ${darkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'} flex flex-col transition-colors duration-200`}>
+    <div className={`min-h-dvh ${darkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'} flex flex-col transition-colors duration-200`}>
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 bg-slate-900 dark:bg-slate-800 text-white text-xs font-semibold rounded-2xl shadow-xl border border-slate-700">
+        <div className="fixed bottom-24 md:bottom-6 left-4 right-4 sm:left-auto sm:right-6 z-50 flex items-center gap-2 px-4 py-3 bg-slate-900 dark:bg-slate-800 text-white text-xs font-semibold rounded-2xl shadow-xl border border-slate-700">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{toastMessage}</span>
         </div>
       )}
 
+      {/* Top Install App Alert (shown upon login on Android, iOS & Desktop unless already installed) */}
+      <PWAInstallBanner
+        visible={showInstallBanner}
+        isInstalled={isInstalled}
+        isInstallable={isInstallable}
+        isIOS={isIOS}
+        isAndroid={isAndroid}
+        onInstall={async () => {
+          const accepted = await install();
+          if (accepted) {
+            setShowInstallBanner(false);
+            showToast('¡Aplicación instalada en tu dispositivo!');
+          }
+          return accepted;
+        }}
+        onDismiss={() => setShowInstallBanner(false)}
+        showGuideModal={showInstallGuideModal}
+        onOpenGuideModal={() => setShowInstallGuideModal(true)}
+        onCloseGuideModal={() => setShowInstallGuideModal(false)}
+      />
+
       {/* Header with Top-Level Module Switcher & User Profile */}
       <Header
-        activeModule={activeModule}
-        onChangeModule={setActiveModule}
+        activeModule={effectiveModule}
+        onChangeModule={(mod) => setActiveModule(isDirectivaClubes ? 'clubes' : mod)}
         currentTab={currentTab}
         onChangeTab={setCurrentTab}
         onOpenRegister={() => setIsRegisterOpen(true)}
         onOpenBackupModal={() => {
-          setBackupInitialTab('tables');
-          setIsBackupOpen(true);
+          if (!isDirectivaClubes) {
+            setBackupInitialTab('tables');
+            setIsBackupOpen(true);
+          }
         }}
         currentUser={currentUser}
         onOpenAuth={() => setIsAuthOpen(true)}
@@ -1115,12 +1483,25 @@ export default function App() {
         onLogout={handleLogout}
         darkMode={darkMode}
         onToggleDarkMode={() => setDarkMode((prev) => !prev)}
+        canInstallApp={!isInstalled}
+        onOpenInstallApp={() => {
+          if (isInstallable) {
+            install().then((accepted) => {
+              if (accepted) {
+                setShowInstallBanner(false);
+                showToast('¡Aplicación instalada en tu dispositivo!');
+              }
+            });
+          } else {
+            setShowInstallGuideModal(true);
+          }
+        }}
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className={`flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 ${!isDirectivaClubes ? 'pb-24 md:pb-6' : 'pb-6'}`}>
         {/* PORTAL DE ENTRADA: 3 CUADROS RECTANGULARES GRANDES */}
-        {activeModule === 'portal' && (
+        {effectiveModule === 'portal' && (
           <PortalEntry
             currentUser={currentUser}
             attendeesCount={attendees.length}
@@ -1142,7 +1523,7 @@ export default function App() {
         )}
 
         {/* MODULE: CONCURSO IMITA TU PERSONAJE BÍBLICO (28 Nov 2026) */}
-        {activeModule === 'personaje_biblico' && (
+        {effectiveModule === 'personaje_biblico' && (
           <BiblicalCharacterManager
             registrations={biblicalCharacters}
             onAddRegistration={handleAddCharacterRegistration}
@@ -1151,13 +1532,13 @@ export default function App() {
             onBackToPortal={() => setActiveModule('portal')}
             currentUser={currentUser}
             contestConfig={contestConfig}
-            onUpdateContestConfig={setContestConfig}
+            onUpdateContestConfig={handleUpdateContestConfig}
             onRefreshRegistrations={handleRefreshCharacters}
           />
         )}
 
         {/* MODULE 1: REGISTRO VISITAS (Attendance, Conferences, Reports, Stats) */}
-        {activeModule === 'visitas' && (
+        {effectiveModule === 'visitas' && (
           <>
             {/* Prominent Framed Sub-Menu Recuadro */}
             <SubMenuVisitas
@@ -1228,7 +1609,7 @@ export default function App() {
         )}
 
         {/* MODULE 2: CLUBES (Incomes, Expenses, Net Profit, Activities & Financial Analysis) */}
-        {activeModule === 'clubes' && (
+        {effectiveModule === 'clubes' && (
           <ClubManager
             clubs={clubs}
             activities={clubActivities}
@@ -1248,12 +1629,12 @@ export default function App() {
             onAddClubEnrollment={handleAddClubEnrollment}
             onUpdateClubEnrollment={handleUpdateClubEnrollment}
             onDeleteClubEnrollment={handleDeleteClubEnrollment}
-            onBackToPortal={() => setActiveModule('portal')}
+            onBackToPortal={isDirectivaClubes ? undefined : () => setActiveModule('portal')}
           />
         )}
 
         {/* MODULE 3: FOTOS Y GALERÍA DE LA IGLESIA */}
-        {activeModule === 'fotos' && (
+        {effectiveModule === 'fotos' && (
           <PhotoGalleryManager
             photos={photos}
             albums={photoAlbums}
@@ -1267,7 +1648,7 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="mt-auto border-t-2 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-4 no-print transition-colors">
+      <footer className={`mt-auto border-t-2 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-4 ${!isDirectivaClubes ? 'hidden md:block' : ''} no-print transition-colors`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600 dark:text-slate-400 font-semibold">
           <div className="flex items-center gap-2">
             <span className="font-extrabold text-slate-900 dark:text-white">Eclesia</span>
@@ -1278,13 +1659,13 @@ export default function App() {
           <div className="flex items-center gap-2">
             <span>Módulo actual:</span>
             <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-extrabold border border-slate-300 dark:border-slate-700">
-              {activeModule === 'portal'
+              {effectiveModule === 'portal'
                 ? 'Portal Principal'
-                : activeModule === 'visitas'
+                : effectiveModule === 'visitas'
                 ? 'Registro Visitas'
-                : activeModule === 'clubes'
+                : effectiveModule === 'clubes'
                 ? 'Gestión de Clubes'
-                : activeModule === 'fotos'
+                : effectiveModule === 'fotos'
                 ? 'Fotos de la Iglesia'
                 : 'Personaje Bíblico'}
             </span>

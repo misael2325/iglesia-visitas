@@ -15,7 +15,7 @@ export const WeeklyAttendanceDays: React.FC<WeeklyAttendanceDaysProps> = ({
   compact = false,
 }) => {
   return (
-    <div className="flex items-center gap-1.5 sm:gap-2">
+    <div className="flex items-center gap-1 sm:gap-2">
       {days.map((day) => {
         const isAttended = !!attendance[day.dateString];
         const isToday = day.isToday;
@@ -33,11 +33,11 @@ export const WeeklyAttendanceDays: React.FC<WeeklyAttendanceDaysProps> = ({
             }`}
             className={`
               relative flex flex-col items-center justify-center font-bold transition-all duration-150 select-none
-              ${compact ? 'w-7 h-7 sm:w-8 sm:h-8 text-xs' : 'w-8 h-8 sm:w-9 sm:h-9 text-xs sm:text-sm'}
-              rounded-lg cursor-pointer
+              ${compact ? 'w-8 h-8 text-xs' : 'w-9 h-9 sm:w-9 sm:h-9 text-xs sm:text-sm'}
+              rounded-xl sm:rounded-lg cursor-pointer active:scale-95
               ${
                 isAttended
-                  ? 'bg-slate-900 dark:bg-blue-600 text-white shadow-xs border border-slate-950 dark:border-blue-500 scale-100 hover:bg-slate-800 dark:hover:bg-blue-500 active:scale-95'
+                  ? 'bg-slate-900 dark:bg-blue-600 text-white shadow-xs border border-slate-950 dark:border-blue-500 scale-100 hover:bg-slate-800 dark:hover:bg-blue-500'
                   : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-950 dark:hover:text-white border border-slate-300 dark:border-slate-700 shadow-2xs'
               }
               ${isToday ? 'ring-2 ring-blue-600 ring-offset-1 dark:ring-offset-slate-900 font-extrabold' : ''}

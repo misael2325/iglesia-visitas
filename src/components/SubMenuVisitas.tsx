@@ -77,28 +77,28 @@ export const SubMenuVisitas: React.FC<SubMenuVisitasProps> = ({
   const visibleTabs = tabs.filter((tab) => !isSecretaria || tab.secretariaAllowed);
 
   return (
-    <div className="bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 shadow-md rounded-2xl sm:rounded-3xl p-4 sm:p-5 mb-6 transition-all duration-200">
+    <div className="bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 shadow-md rounded-2xl sm:rounded-3xl p-3.5 sm:p-5 mb-5 sm:mb-6 transition-all duration-200">
       {/* 1. SECCIÓN SUPERIOR: TÍTULO REGISTRO DE VISITAS + BOTÓN VOLVER + ACCIÓN */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-3.5 sm:pb-4 border-b border-slate-200 dark:border-slate-800">
+        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
           <button
             type="button"
             onClick={onBackToPortal}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-extrabold text-slate-800 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 border-2 border-slate-300 dark:border-slate-700 rounded-xl transition-all shadow-xs shrink-0"
-            title="Volver al Menú Principal con los 2 módulos generales"
+            className="min-h-[40px] flex items-center gap-1.5 px-3 py-2 text-xs font-extrabold text-slate-800 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 border-2 border-slate-300 dark:border-slate-700 rounded-xl transition-all shadow-xs shrink-0"
+            title="Volver al Menú Principal"
           >
             <ArrowLeft className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-            <span>← Menú Principal</span>
+            <span className="hidden xs:inline sm:inline">Menú</span>
           </button>
 
           <div className="h-7 w-[2px] bg-slate-300 dark:bg-slate-700 hidden sm:block" />
 
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] uppercase font-black tracking-wider text-blue-800 dark:text-blue-200 bg-blue-100 dark:bg-blue-950 px-2.5 py-0.5 rounded-md border border-blue-300 dark:border-blue-800">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <span className="text-[10px] uppercase font-black tracking-wider text-blue-800 dark:text-blue-200 bg-blue-100 dark:bg-blue-950 px-2 py-0.5 rounded-md border border-blue-300 dark:border-blue-800">
                 Módulo General
               </span>
-              <h1 className="text-lg sm:text-2xl font-black text-slate-950 dark:text-white tracking-tight">
+              <h1 className="text-base sm:text-2xl font-black text-slate-950 dark:text-white tracking-tight truncate">
                 Registro de Visitas
               </h1>
             </div>
@@ -109,11 +109,11 @@ export const SubMenuVisitas: React.FC<SubMenuVisitasProps> = ({
         </div>
 
         {/* Botón de acción rápida: + Registrar Visita */}
-        <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+        <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
           <button
             type="button"
             onClick={onOpenRegister}
-            className="px-4 py-2.5 text-xs font-extrabold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition-all shadow-sm flex items-center gap-2 whitespace-nowrap active:scale-98"
+            className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 text-xs font-extrabold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 whitespace-nowrap active:scale-98"
           >
             <UserPlus className="w-4 h-4 shrink-0" />
             <span>+ Registrar Visita</span>

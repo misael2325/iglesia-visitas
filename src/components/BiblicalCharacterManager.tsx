@@ -27,7 +27,8 @@ import {
   RotateCcw,
   RefreshCw,
   Cloud,
-  Church
+  Church,
+  Pencil
 } from 'lucide-react';
 import { BiblicalCharacterRegistration, AppUser, ContestCustomConfig, CHURCH_OPTIONS } from '../types';
 import { compressImageFile } from '../utils/photoStorage';
@@ -35,9 +36,9 @@ import { createPublicRegistrationShareUrl, getSupabaseConfig } from '../services
 
 interface BiblicalCharacterManagerProps {
   registrations: BiblicalCharacterRegistration[];
-  onAddRegistration: (reg: BiblicalCharacterRegistration) => void;
-  onUpdateRegistration: (reg: BiblicalCharacterRegistration) => void;
-  onDeleteRegistration: (id: string) => void;
+  onAddRegistration: (reg: BiblicalCharacterRegistration) => Promise<any> | void;
+  onUpdateRegistration: (reg: BiblicalCharacterRegistration) => Promise<any> | void;
+  onDeleteRegistration: (id: string) => Promise<any> | void;
   onBackToPortal: () => void;
   currentUser?: AppUser;
   contestConfig: ContestCustomConfig;
@@ -64,6 +65,10 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedDetail, setSelectedDetail] = useState<BiblicalCharacterRegistration | null>(null);
+  const [editingReg, setEditingReg] = useState<BiblicalCharacterRegistration | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<BiblicalCharacterRegistration | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
   const [isPrintScorecardOpen, setIsPrintScorecardOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -266,7 +271,7 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
     window.open(waUrl, '_blank');
   };
 
-  const handleCreateRegistration = (e: React.FormEvent) => {
+  const handleCreateRegistration = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formNombre.trim() || !formContacto.trim() || !formPersonaje.trim() || !formAudio) {
       showToast('Por favor completa los campos requeridos (*)');
@@ -285,9 +290,9 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
       aprobado: true,
     };
 
-    onAddRegistration(newReg);
+    await onAddRegistration(newReg);
     setIsNewModalOpen(false);
-    showToast(`¡Inscripción de ${newReg.nombre} guardada con éxito!`);
+    showToast(`¡Inscripción de ${newReg.nombre} guardada en tiempo real!`);
 
     // Reset form
     setFormNombre('');
@@ -298,10 +303,55 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
     setFormAudio('No');
   };
 
-  const handleToggleAprobado = (r: BiblicalCharacterRegistration) => {
+  const handleToggleAprobado = async (r: BiblicalCharacterRegistration) => {
     const updated = { ...r, aprobado: !r.aprobado };
-    onUpdateRegistration(updated);
-    showToast(`Estado actualizado: ${updated.aprobado ? 'Aprobado' : 'Pendiente'}`);
+    if (selectedDetail?.id === r.id) {
+      setSelectedDetail(updated);
+    }
+    await onUpdateRegistration(updated);
+    showToast(`Estado actualizado en la nube: ${updated.aprobado ? 'Aprobado' : 'Pendiente'}`);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingReg) return;
+    if (!editingReg.nombre.trim() || !editingReg.contacto.trim() || !editingReg.personaje.trim()) {
+      showToast('Por favor completa los campos requeridos (*).');
+      return;
+    }
+    setIsSavingEdit(true);
+    try {
+      const cleaned: BiblicalCharacterRegistration = {
+        ...editingReg,
+        nombre: editingReg.nombre.trim(),
+        edad: editingReg.edad?.trim() || undefined,
+        contacto: editingReg.contacto.trim(),
+        iglesia: editingReg.iglesia?.trim() || undefined,
+        personaje: editingReg.personaje.trim(),
+      };
+      await onUpdateRegistration(cleaned);
+      if (selectedDetail?.id === cleaned.id) {
+        setSelectedDetail(cleaned);
+      }
+      setEditingReg(null);
+      showToast(`¡Cambios de ${cleaned.nombre} guardados en tiempo real!`);
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      await onDeleteRegistration(deleteTarget.id);
+      if (selectedDetail?.id === deleteTarget.id) {
+        setSelectedDetail(null);
+      }
+      setDeleteTarget(null);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -315,48 +365,48 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
       )}
 
       {/* Top Breadcrumb & Header Banner */}
-      <div className="bg-white dark:bg-slate-900 rounded-3xl border-2 border-amber-300 dark:border-amber-900/60 p-6 sm:p-8 shadow-sm">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl border-2 border-amber-300 dark:border-amber-900/60 p-4 sm:p-8 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="space-y-2">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5 sm:gap-3">
               <button
                 type="button"
                 onClick={onBackToPortal}
-                className="p-2 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+                className="min-h-[40px] min-w-[40px] flex items-center justify-center p-2 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer shrink-0"
                 title="Volver al Portal General"
               >
                 <ArrowLeft className="w-4 h-4" />
               </button>
 
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-950 border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs font-extrabold uppercase tracking-wide">
-                <Sparkles className="w-3.5 h-3.5" />
+                <Sparkles className="w-3.5 h-3.5 shrink-0" />
                 <span>Evento Especial Eclesia</span>
               </div>
             </div>
 
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-950 dark:text-white tracking-tight flex items-center gap-3">
+            <h1 className="text-xl sm:text-3xl font-extrabold text-slate-950 dark:text-white tracking-tight flex items-center gap-3">
               <span>📖 Concurso: Imita tu Personaje Bíblico</span>
             </h1>
 
             <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 font-medium">
-              Gestión oficial de participantes (nombre, apellido, edad, contacto, personaje y audio) y planilla de jurado.
-              <span className="ml-2 font-bold text-amber-700 dark:text-amber-400">· Sábado 28 de noviembre de 2026</span>
+              Gestión oficial de participantes y planilla de jurado.
+              <span className="ml-1.5 font-bold text-amber-700 dark:text-amber-400">· Sábado 28 de noviembre de 2026</span>
             </p>
           </div>
 
           {/* Primary Quick Action Buttons */}
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="grid grid-cols-1 xs:grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 sm:gap-2.5 w-full md:w-auto">
             <button
               type="button"
               onClick={() => {
                 setTempConfig(contestConfig);
                 setIsConfigModalOpen(true);
               }}
-              className="px-4 py-2.5 rounded-2xl border-2 border-amber-400 dark:border-amber-700 hover:border-amber-500 bg-amber-50/70 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 font-extrabold text-xs inline-flex items-center gap-2 shadow-xs transition-all cursor-pointer"
+              className="min-h-[42px] px-3.5 sm:px-4 py-2.5 rounded-2xl border-2 border-amber-400 dark:border-amber-700 hover:border-amber-500 bg-amber-50/70 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 font-extrabold text-xs inline-flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
               title="Configurar foto de portada horizontal, colores y flyer vertical"
             >
-              <Palette className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-              <span>Personalizar Portada y Flyer</span>
+              <Palette className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span>Personalizar Portada</span>
             </button>
 
             {onRefreshRegistrations && (
@@ -364,13 +414,13 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
                 type="button"
                 onClick={handleManualRefresh}
                 disabled={isRefreshing}
-                className="px-4 py-2.5 rounded-2xl border-2 border-emerald-500/50 hover:border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 font-extrabold text-xs inline-flex items-center gap-2 shadow-xs transition-all cursor-pointer disabled:opacity-60"
+                className="min-h-[42px] px-3.5 sm:px-4 py-2.5 rounded-2xl border-2 border-emerald-500/50 hover:border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 font-extrabold text-xs inline-flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer disabled:opacity-60"
                 title="Consultar y actualizar registros en vivo desde la base de datos"
               >
-                <RefreshCw className={`w-4 h-4 text-emerald-600 dark:text-emerald-400 ${isRefreshing ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 ${isRefreshing ? 'animate-spin' : ''}`} />
                 <span>{isRefreshing ? 'Sincronizando...' : 'Sincronizar Nube'}</span>
                 {lastSyncedAt && (
-                  <span className="text-[10px] opacity-75 font-mono">
+                  <span className="text-[10px] opacity-75 font-mono hidden sm:inline">
                     ({lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })})
                   </span>
                 )}
@@ -380,27 +430,27 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
             <button
               type="button"
               onClick={handleSharePublicLink}
-              className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs inline-flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+              className="min-h-[42px] px-3.5 sm:px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs inline-flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
             >
-              <Share2 className="w-4 h-4" />
-              <span>Compartir Link WhatsApp</span>
+              <Share2 className="w-4 h-4 shrink-0" />
+              <span>Compartir WhatsApp</span>
             </button>
 
             <button
               type="button"
               onClick={() => setIsPrintScorecardOpen(true)}
-              className="px-4 py-2.5 rounded-2xl border-2 border-slate-300 dark:border-slate-700 hover:border-amber-600 dark:hover:border-amber-500 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-extrabold text-xs inline-flex items-center gap-2 shadow-xs transition-all cursor-pointer"
+              className="min-h-[42px] px-3.5 sm:px-4 py-2.5 rounded-2xl border-2 border-slate-300 dark:border-slate-700 hover:border-amber-600 dark:hover:border-amber-500 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-extrabold text-xs inline-flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
             >
-              <Printer className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-              <span>Planilla para Jurado</span>
+              <Printer className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span>Planilla Jurado</span>
             </button>
 
             <button
               type="button"
               onClick={() => setIsNewModalOpen(true)}
-              className="px-4 py-2.5 rounded-2xl bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-xs inline-flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+              className="min-h-[44px] sm:col-span-2 md:col-span-1 px-4 py-2.5 rounded-2xl bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-xs inline-flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-4 h-4 shrink-0" />
               <span>Nueva Inscripción</span>
             </button>
           </div>
@@ -455,7 +505,7 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
       </div>
 
       {/* FILTER & SEARCH TOOLBAR */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-slate-200 dark:border-slate-800 p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-3">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-slate-200 dark:border-slate-800 p-3.5 sm:p-4 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
         <div className="relative w-full md:w-80">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
@@ -463,17 +513,34 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
             placeholder="Buscar participante, personaje o contacto..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
+            className="w-full min-h-[42px] pl-9 pr-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 w-full md:w-auto">
+          {/* Iglesia Filter */}
+          <div className="relative">
+            <Church className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <select
+              value={filterIglesia}
+              onChange={(e) => setFilterIglesia(e.target.value)}
+              className="w-full sm:w-auto min-h-[40px] pl-8 pr-7 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer"
+            >
+              <option value="all">Todas las iglesias</option>
+              {CHURCH_OPTIONS.map((ch) => (
+                <option key={ch} value={ch}>
+                  {ch}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Audio Filter */}
-          <div className="inline-flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1 border border-slate-300 dark:border-slate-700 text-xs font-bold">
+          <div className="grid grid-cols-3 sm:inline-flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1 border border-slate-300 dark:border-slate-700 text-[11px] sm:text-xs font-bold">
             <button
               type="button"
               onClick={() => setFilterAudio('all')}
-              className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+              className={`min-h-[34px] px-2 sm:px-3 py-1 rounded-lg transition-all cursor-pointer truncate ${
                 filterAudio === 'all'
                   ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -484,7 +551,7 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
             <button
               type="button"
               onClick={() => setFilterAudio('si')}
-              className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+              className={`min-h-[34px] px-2 sm:px-3 py-1 rounded-lg transition-all cursor-pointer truncate ${
                 filterAudio === 'si'
                   ? 'bg-blue-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -495,7 +562,7 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
             <button
               type="button"
               onClick={() => setFilterAudio('no')}
-              className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+              className={`min-h-[34px] px-2 sm:px-3 py-1 rounded-lg transition-all cursor-pointer truncate ${
                 filterAudio === 'no'
                   ? 'bg-slate-700 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
@@ -508,7 +575,7 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
           <button
             type="button"
             onClick={handleCopyAll}
-            className="px-3.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+            className="min-h-[40px] px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
           >
             <Copy className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
             <span>Copiar Todo</span>
@@ -524,7 +591,7 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
             No se encontraron inscripciones
           </h3>
           <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-            {searchTerm || filterAudio !== 'all'
+            {searchTerm || filterAudio !== 'all' || filterIglesia !== 'all'
               ? 'Prueba cambiando los filtros o el término de búsqueda.'
               : 'Aún no hay participantes inscritos. Comparte el enlace público en WhatsApp o crea la primera inscripción manual.'}
           </p>
@@ -548,13 +615,121 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
           </div>
         </div>
       ) : (
-        <div className="bg-white dark:bg-slate-900 rounded-3xl border-2 border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+        <>
+          {/* MOBILE CARD LIST (Android & iOS Touch-First) */}
+          <div className="md:hidden space-y-3">
+            {filtered.map((r, idx) => (
+              <div
+                key={r.id}
+                className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-slate-200 dark:border-slate-800 p-4 shadow-xs space-y-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono font-bold text-slate-400">#{idx + 1}</span>
+                      <h3 className="text-sm font-extrabold text-slate-950 dark:text-white truncate">
+                        {r.nombre}
+                      </h3>
+                    </div>
+                    <p className="text-xs font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1 mt-1">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                      <span className="truncate">{r.personaje}</span>
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleToggleAprobado(r)}
+                    className={`min-h-[34px] inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold transition-all shrink-0 ${
+                      r.aprobado
+                        ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                        : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                    }`}
+                  >
+                    {r.aprobado ? <Check className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+                    <span>{r.aprobado ? 'Aprobado' : 'Pendiente'}</span>
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-600 dark:text-slate-300 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  {r.iglesia && (
+                    <span className="inline-flex items-center gap-1 font-bold text-amber-800 dark:text-amber-300">
+                      <Church className="w-3.5 h-3.5 shrink-0" />
+                      <span>{r.iglesia}</span>
+                    </span>
+                  )}
+                  <a
+                    href={`tel:${r.contacto.replace(/[^\d+]/g, '')}`}
+                    className="inline-flex items-center gap-1 font-mono font-semibold text-blue-600 dark:text-blue-400"
+                  >
+                    <Phone className="w-3.5 h-3.5 shrink-0" />
+                    <span>{r.contacto}</span>
+                  </a>
+                  {r.edad && (
+                    <span>Edad: <strong>{r.edad}</strong></span>
+                  )}
+                  <span className="inline-flex items-center gap-1 font-semibold">
+                    {r.audio === 'Sí' ? (
+                      <>
+                        <Volume2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                        <span className="text-blue-700 dark:text-blue-300">Con Audio</span>
+                      </>
+                    ) : (
+                      <>
+                        <VolumeX className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Sin Audio</span>
+                      </>
+                    )}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-4 gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDetail(r)}
+                    className="min-h-[40px] rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-bold flex items-center justify-center gap-1"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                    <span>Ver</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingReg({ ...r })}
+                    className="min-h-[40px] rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 text-[11px] font-bold flex items-center justify-center gap-1"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    <span>Editar</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCopySingle(r)}
+                    className="min-h-[40px] rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-bold flex items-center justify-center gap-1"
+                  >
+                    <Copy className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                    <span>Copiar</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteTarget(r)}
+                    className="min-h-[40px] rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-[11px] font-bold flex items-center justify-center gap-1"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Borrar</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* DESKTOP TABLE */}
+          <div className="hidden md:block bg-white dark:bg-slate-900 rounded-3xl border-2 border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
               <thead className="bg-slate-100 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 uppercase tracking-wider font-extrabold">
                 <tr>
                   <th className="py-3.5 px-4">#</th>
                   <th className="py-3.5 px-4">Nombre y Apellido</th>
+                  <th className="py-3.5 px-4">Iglesia</th>
                   <th className="py-3.5 px-4">Edad</th>
                   <th className="py-3.5 px-4">Contacto</th>
                   <th className="py-3.5 px-4">Personaje Bíblico</th>
@@ -575,6 +750,17 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
                         <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         <span>{r.nombre}</span>
                       </div>
+                    </td>
+
+                    <td className="py-3.5 px-4">
+                      {r.iglesia ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 font-bold border border-amber-200 dark:border-amber-800 whitespace-nowrap">
+                          <Church className="w-3 h-3 shrink-0" />
+                          <span>{r.iglesia}</span>
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 italic">No esp.</span>
+                      )}
                     </td>
 
                     <td className="py-3.5 px-4 font-semibold text-slate-700 dark:text-slate-300">
@@ -646,6 +832,15 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
 
                         <button
                           type="button"
+                          onClick={() => setEditingReg({ ...r })}
+                          className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-amber-50 dark:hover:bg-amber-950 text-amber-700 dark:text-amber-400 transition-colors cursor-pointer"
+                          title="Editar participante"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          type="button"
                           onClick={() => handleCopySingle(r)}
                           className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
                           title="Copiar para WhatsApp"
@@ -655,12 +850,7 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
 
                         <button
                           type="button"
-                          onClick={() => {
-                            if (window.confirm(`¿Seguro que deseas eliminar la inscripción de ${r.nombre}?`)) {
-                              onDeleteRegistration(r.id);
-                              showToast(`Inscripción de ${r.nombre} eliminada.`);
-                            }
-                          }}
+                          onClick={() => setDeleteTarget(r)}
                           className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-rose-50 dark:hover:bg-rose-950 text-rose-600 dark:text-rose-400 transition-colors cursor-pointer"
                           title="Eliminar inscripción"
                         >
@@ -674,6 +864,7 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
             </table>
           </div>
         </div>
+        </>
       )}
 
       {/* DETAIL MODAL */}
@@ -723,23 +914,42 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
                 </div>
               </div>
 
-              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                <span className="text-slate-500 dark:text-slate-400 block font-bold mb-0.5">¿Requiere Audio?:</span>
-                <span className="font-extrabold text-slate-900 dark:text-white text-sm">
-                  {selectedDetail.audio === 'Sí' ? '🎵 Sí (Pista musical)' : '🎙️ No (Solo voz)'}
-                </span>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                  <span className="text-slate-500 dark:text-slate-400 block font-bold mb-0.5">Iglesia:</span>
+                  <span className="font-extrabold text-slate-900 dark:text-white text-sm flex items-center gap-1.5">
+                    <Church className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span>{selectedDetail.iglesia || 'No especificada'}</span>
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                  <span className="text-slate-500 dark:text-slate-400 block font-bold mb-0.5">¿Requiere Audio?:</span>
+                  <span className="font-extrabold text-slate-900 dark:text-white text-sm">
+                    {selectedDetail.audio === 'Sí' ? '🎵 Sí (Pista)' : '🎙️ No (Voz)'}
+                  </span>
+                </div>
               </div>
             </div>
 
-            <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={() => handleCopySingle(selectedDetail)}
-                className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs inline-flex items-center gap-1.5 text-slate-700 dark:text-slate-300 cursor-pointer"
-              >
-                <Copy className="w-3.5 h-3.5" />
-                <span>Copiar Ficha</span>
-              </button>
+            <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleCopySingle(selectedDetail)}
+                  className="px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs inline-flex items-center gap-1.5 text-slate-700 dark:text-slate-300 cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copiar</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingReg({ ...selectedDetail })}
+                  className="px-3.5 py-2 rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 font-bold text-xs inline-flex items-center gap-1.5 text-amber-800 dark:text-amber-300 cursor-pointer"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  <span>Editar</span>
+                </button>
+              </div>
 
               <button
                 type="button"
@@ -826,6 +1036,26 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
                 </div>
               </div>
 
+              {/* 3.5 Iglesia a la que pertenece */}
+              <div>
+                <label className="block font-bold mb-1 text-slate-900 dark:text-white">
+                  ¿A qué iglesia pertenece? <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  required
+                  value={formIglesia}
+                  onChange={(e) => setFormIglesia(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium cursor-pointer"
+                >
+                  <option value="">-- Selecciona la iglesia --</option>
+                  {CHURCH_OPTIONS.map((ch) => (
+                    <option key={ch} value={ch}>
+                      {ch}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* 4. Personaje Bíblico */}
               <div>
                 <label className="block font-bold mb-1 text-slate-900 dark:text-white">
@@ -893,6 +1123,192 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
         </div>
       )}
 
+      {/* EDIT REGISTRATION MODAL (Real-time edit in database) */}
+      {editingReg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border-2 border-amber-400 dark:border-amber-700 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+              <div>
+                <span className="text-[11px] font-extrabold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                  Edición en Tiempo Real · Base de Datos
+                </span>
+                <h3 className="text-xl font-extrabold text-slate-950 dark:text-white">
+                  Editar Participante
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingReg(null)}
+                className="p-1.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-bold mb-1 text-slate-900 dark:text-white">
+                  Nombre y Apellido <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editingReg.nombre}
+                  onChange={(e) => setEditingReg({ ...editingReg, nombre: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold mb-1 text-slate-900 dark:text-white">
+                    Edad
+                  </label>
+                  <input
+                    type="text"
+                    value={editingReg.edad || ''}
+                    onChange={(e) => setEditingReg({ ...editingReg, edad: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold mb-1 text-slate-900 dark:text-white">
+                    Contacto <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editingReg.contacto}
+                    onChange={(e) => setEditingReg({ ...editingReg, contacto: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1 text-slate-900 dark:text-white">
+                  ¿A qué iglesia pertenece?
+                </label>
+                <select
+                  value={editingReg.iglesia || ''}
+                  onChange={(e) => setEditingReg({ ...editingReg, iglesia: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium cursor-pointer"
+                >
+                  <option value="">-- Selecciona la iglesia --</option>
+                  {CHURCH_OPTIONS.map((ch) => (
+                    <option key={ch} value={ch}>
+                      {ch}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1 text-slate-900 dark:text-white">
+                  Personaje Bíblico <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editingReg.personaje}
+                  onChange={(e) => setEditingReg({ ...editingReg, personaje: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1.5 text-slate-900 dark:text-white">
+                  ¿Requiere Audio?
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setEditingReg({ ...editingReg, audio: 'Sí' })}
+                    className={`flex items-center justify-center gap-2 p-2.5 rounded-xl border-2 cursor-pointer transition-all ${
+                      editingReg.audio === 'Sí'
+                        ? 'border-amber-600 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 font-extrabold'
+                        : 'border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium'
+                    }`}
+                  >
+                    <Volume2 className="w-4 h-4 text-blue-500" />
+                    <span>Sí (Pista)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingReg({ ...editingReg, audio: 'No' })}
+                    className={`flex items-center justify-center gap-2 p-2.5 rounded-xl border-2 cursor-pointer transition-all ${
+                      editingReg.audio !== 'Sí'
+                        ? 'border-amber-600 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 font-extrabold'
+                        : 'border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium'
+                    }`}
+                  >
+                    <VolumeX className="w-4 h-4 text-slate-400" />
+                    <span>No (Voz)</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingReg(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingEdit}
+                  className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-extrabold shadow-sm cursor-pointer disabled:opacity-60"
+                >
+                  {isSavingEdit ? 'Guardando...' : 'Guardar Cambios'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL (In-App, works reliably in iframes & deletes permanently in Supabase) */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border-2 border-rose-400 dark:border-rose-800 rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 rounded-2xl bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-slate-950 dark:text-white">
+                  ¿Eliminar inscripción?
+                </h3>
+                <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
+                  Vas a eliminar permanentemente a <strong>{deleteTarget.nombre}</strong> ({deleteTarget.personaje}). Esta acción borrará el registro en tiempo real de la base de datos.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setDeleteTarget(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs shadow-sm cursor-pointer disabled:opacity-60"
+              >
+                {isDeleting ? 'Eliminando...' : 'Sí, Eliminar Permanente'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* PRINT SCORECARD MODAL / JURADO VIEW */}
       {isPrintScorecardOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
@@ -936,6 +1352,7 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
                   <tr>
                     <th className="p-2 border-r border-slate-300 w-8">#</th>
                     <th className="p-2 border-r border-slate-300">Nombre y Apellido</th>
+                    <th className="p-2 border-r border-slate-300">Iglesia</th>
                     <th className="p-2 border-r border-slate-300 w-16">Edad</th>
                     <th className="p-2 border-r border-slate-300">Personaje Bíblico</th>
                     <th className="p-2 border-r border-slate-300 w-16 text-center">Audio</th>
@@ -951,6 +1368,7 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
                     <tr key={r.id} className="h-14">
                       <td className="p-2 border-r border-slate-300 font-mono font-bold text-center">{i + 1}</td>
                       <td className="p-2 border-r border-slate-300 font-bold">{r.nombre}</td>
+                      <td className="p-2 border-r border-slate-300 text-slate-700 font-semibold">{r.iglesia || '-'}</td>
                       <td className="p-2 border-r border-slate-300 text-slate-600">{r.edad || '-'}</td>
                       <td className="p-2 border-r border-slate-300 font-bold text-amber-900">{r.personaje}</td>
                       <td className="p-2 border-r border-slate-300 text-center font-bold">{r.audio}</td>
@@ -967,6 +1385,7 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
                       <td className="p-2 border-r border-slate-300 font-mono font-bold text-center text-slate-400">
                         {registrations.length + idx + 1}
                       </td>
+                      <td className="p-2 border-r border-slate-300"></td>
                       <td className="p-2 border-r border-slate-300"></td>
                       <td className="p-2 border-r border-slate-300"></td>
                       <td className="p-2 border-r border-slate-300"></td>

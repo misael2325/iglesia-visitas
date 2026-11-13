@@ -206,8 +206,8 @@ export const ClubEnrollmentSection: React.FC<ClubEnrollmentSectionProps> = ({
       onUpdateEnrollment(updated);
     } else {
       const newEnrollment: ClubEnrollment = {
-        id: `mat-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-        clubId: club ? club.id : 'general',
+        id: `mat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        clubId: club ? club.id : (formClubId || 'general'),
         clubName: club ? club.name : 'General',
         memberName: formMemberName.trim(),
         period: formPeriod.trim() || new Date().getFullYear().toString(),
@@ -222,6 +222,13 @@ export const ClubEnrollmentSection: React.FC<ClubEnrollmentSectionProps> = ({
         medicalNotes: formMedicalNotes.trim() || undefined,
         createdAt: new Date().toISOString(),
       };
+      // Reset active filters so the newly saved enrollment is always visible right away
+      setSearchQuery('');
+      setStatusFilter('all');
+      setCategoryFilter('all');
+      if (clubFilter !== 'all' && clubFilter !== newEnrollment.clubId) {
+        setClubFilter('all');
+      }
       onAddEnrollment(newEnrollment);
     }
 
@@ -326,92 +333,92 @@ export const ClubEnrollmentSection: React.FC<ClubEnrollmentSectionProps> = ({
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
       {/* 4 KPI Highlight Cards for Club Enrollments */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Card 1: Total Matriculados */}
-        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-md">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-wider block">
+        <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-5 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-md">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[11px] sm:text-xs font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-wider block">
               Total Matriculados
             </span>
-            <div className="p-2 bg-blue-100 dark:bg-blue-950/80 rounded-xl text-blue-700 dark:text-blue-400 border border-blue-300 dark:border-blue-800">
+            <div className="p-1.5 sm:p-2 bg-blue-100 dark:bg-blue-950/80 rounded-xl text-blue-700 dark:text-blue-400 border border-blue-300 dark:border-blue-800 shrink-0">
               <GraduationCap className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-2">
-            <span className="text-2xl sm:text-3xl font-extrabold text-slate-950 dark:text-white tabular-nums font-mono">
+            <span className="text-xl sm:text-3xl font-extrabold text-slate-950 dark:text-white tabular-nums font-mono">
               {stats.totalCount}
             </span>
-            <span className="text-xs text-slate-700 dark:text-slate-300 font-semibold block mt-1">
-              {stats.totalPagadas} pagadas · {stats.totalConSaldo} con saldo pendiente
+            <span className="text-[11px] sm:text-xs text-slate-700 dark:text-slate-300 font-semibold block mt-1">
+              {stats.totalPagadas} pagadas · {stats.totalConSaldo} con saldo
             </span>
           </div>
         </div>
 
         {/* Card 2: Dinero de Matrícula Recaudado */}
-        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-md">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-wider block">
+        <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-5 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-md">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[11px] sm:text-xs font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-wider block">
               Recaudado Matrícula
             </span>
-            <div className="p-2 bg-emerald-100 dark:bg-emerald-950/80 rounded-xl text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800">
+            <div className="p-1.5 sm:p-2 bg-emerald-100 dark:bg-emerald-950/80 rounded-xl text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 shrink-0">
               <CheckCircle2 className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-2">
-            <span className="text-2xl sm:text-3xl font-extrabold text-emerald-700 dark:text-emerald-400 tabular-nums font-mono">
+            <span className="text-xl sm:text-3xl font-extrabold text-emerald-700 dark:text-emerald-400 tabular-nums font-mono">
               ${stats.totalRecaudado.toLocaleString('es-ES', { minimumFractionDigits: 0 })}
             </span>
-            <span className="text-xs text-slate-700 dark:text-slate-300 font-semibold block mt-1">
-              {stats.porcentajeCobrado.toFixed(0)}% de las cuotas recaudadas
+            <span className="text-[11px] sm:text-xs text-slate-700 dark:text-slate-300 font-semibold block mt-1">
+              {stats.porcentajeCobrado.toFixed(0)}% de cuotas
             </span>
           </div>
         </div>
 
         {/* Card 3: Saldo Pendiente de Matrícula */}
-        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-md">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-wider block">
+        <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-5 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-md">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[11px] sm:text-xs font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-wider block">
               Saldo Pendiente
             </span>
-            <div className="p-2 bg-amber-100 dark:bg-amber-950/80 rounded-xl text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-800">
+            <div className="p-1.5 sm:p-2 bg-amber-100 dark:bg-amber-950/80 rounded-xl text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-800 shrink-0">
               <Clock className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-2">
-            <span className={`text-2xl sm:text-3xl font-extrabold tabular-nums font-mono ${
+            <span className={`text-xl sm:text-3xl font-extrabold tabular-nums font-mono ${
               stats.totalPendiente > 0 ? 'text-amber-700 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400'
             }`}>
               ${stats.totalPendiente.toLocaleString('es-ES', { minimumFractionDigits: 0 })}
             </span>
-            <span className="text-xs text-slate-700 dark:text-slate-300 font-semibold block mt-1">
-              Cuotas de matrícula por liquidar
+            <span className="text-[11px] sm:text-xs text-slate-700 dark:text-slate-300 font-semibold block mt-1">
+              Por liquidar
             </span>
           </div>
         </div>
 
         {/* Card 4: Total Presupuesto Matrículas */}
-        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-md">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-wider block">
+        <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-5 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-md">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[11px] sm:text-xs font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-wider block">
               Total Cuotas
             </span>
-            <div className="p-2 bg-indigo-100 dark:bg-indigo-950/80 rounded-xl text-indigo-700 dark:text-indigo-400 border border-indigo-300 dark:border-indigo-800">
+            <div className="p-1.5 sm:p-2 bg-indigo-100 dark:bg-indigo-950/80 rounded-xl text-indigo-700 dark:text-indigo-400 border border-indigo-300 dark:border-indigo-800 shrink-0">
               <TrendingUp className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-2">
-            <span className="text-2xl sm:text-3xl font-extrabold text-indigo-700 dark:text-indigo-400 tabular-nums font-mono">
+            <span className="text-xl sm:text-3xl font-extrabold text-indigo-700 dark:text-indigo-400 tabular-nums font-mono">
               ${stats.totalCuotas.toLocaleString('es-ES', { minimumFractionDigits: 0 })}
             </span>
-            <span className="text-xs text-slate-700 dark:text-slate-300 font-semibold block mt-1">
-              Ingreso esperado por matrículas
+            <span className="text-[11px] sm:text-xs text-slate-700 dark:text-slate-300 font-semibold block mt-1">
+              Ingreso esperado
             </span>
           </div>
         </div>
       </div>
 
       {/* Filter and Action Header */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-slate-300 dark:border-slate-700 p-4 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-slate-300 dark:border-slate-700 p-3.5 sm:p-4 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
         {/* Search */}
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -419,18 +426,18 @@ export const ClubEnrollmentSection: React.FC<ClubEnrollmentSectionProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Buscar por nombre de miembro, tutor, teléfono o recibo..."
-            className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white"
+            placeholder="Buscar miembro, tutor, teléfono o recibo..."
+            className="w-full pl-9 pr-3 py-2.5 min-h-[42px] text-sm sm:text-xs bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white"
           />
         </div>
 
         {/* Filters */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2">
           {/* Status filter */}
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as any)}
-            className="px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-bold"
+            className="px-3 py-2 min-h-[42px] text-xs bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-bold"
           >
             <option value="all">Todos los Estados</option>
             <option value="paid">Solo Pagados Total</option>
@@ -441,7 +448,7 @@ export const ClubEnrollmentSection: React.FC<ClubEnrollmentSectionProps> = ({
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className="px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-bold"
+            className="px-3 py-2 min-h-[42px] text-xs bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-bold"
           >
             <option value="all">Todas las Categorías</option>
             {ENROLLMENT_CATEGORIES.map((cat) => (
@@ -454,7 +461,7 @@ export const ClubEnrollmentSection: React.FC<ClubEnrollmentSectionProps> = ({
             <select
               value={clubFilter}
               onChange={(e) => setClubFilter(e.target.value)}
-              className="px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-bold"
+              className="col-span-2 sm:col-span-1 px-3 py-2 min-h-[42px] text-xs bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white font-bold"
             >
               <option value="all">Todos los Clubes</option>
               {clubs.map((c) => (
@@ -467,28 +474,158 @@ export const ClubEnrollmentSection: React.FC<ClubEnrollmentSectionProps> = ({
           <button
             type="button"
             onClick={handleExportPDF}
-            className="px-3 py-2 text-xs font-bold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 rounded-xl transition-colors flex items-center gap-1.5"
+            className="px-3 py-2 min-h-[42px] text-xs font-bold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 rounded-xl transition-colors flex items-center justify-center gap-1.5"
             title="Exportar reporte de matrículas en PDF"
           >
             <Download className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">PDF</span>
+            <span>PDF</span>
           </button>
 
           {/* Add Enrollment Button */}
           <button
             type="button"
             onClick={handleOpenNewModal}
-            className="px-4 py-2 text-xs font-extrabold text-white bg-blue-600 hover:bg-blue-500 rounded-xl shadow-md transition-all flex items-center gap-1.5 shrink-0"
+            className="col-span-2 sm:col-span-1 px-4 py-2.5 min-h-[44px] text-xs font-extrabold text-white bg-blue-600 hover:bg-blue-500 rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 shrink-0"
           >
             <Plus className="w-4 h-4" />
-            <span>+ Nueva Matrícula</span>
+            <span>Nueva Matrícula</span>
           </button>
         </div>
       </div>
 
-      {/* Table of Enrollments */}
+      {/* List & Table of Enrollments */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-slate-300 dark:border-slate-700 shadow-md overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Vista Móvil (Tarjetas táctiles) */}
+        <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
+          {filteredEnrollments.length === 0 ? (
+            <div className="py-10 px-4 text-center text-slate-500 dark:text-slate-400">
+              <GraduationCap className="w-10 h-10 mx-auto mb-2 text-slate-300 dark:text-slate-600" />
+              <p className="font-extrabold text-sm text-slate-700 dark:text-slate-300">
+                No hay matrículas registradas todavía.
+              </p>
+              <p className="text-xs mt-1">
+                Toca <strong>"Nueva Matrícula"</strong> para registrar a un miembro.
+              </p>
+            </div>
+          ) : (
+            filteredEnrollments.map((e) => {
+              const saldo = Math.max(0, e.feeAmount - e.amountPaid);
+              return (
+                <div key={e.id} className="p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-9 h-9 rounded-xl bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 flex items-center justify-center font-black text-sm shrink-0">
+                        {e.memberName.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-extrabold text-sm text-slate-950 dark:text-white truncate">{e.memberName}</p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold truncate">
+                          {e.clubName} · {e.category || 'Miembro'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="px-2 py-1 rounded-lg text-[11px] font-mono font-black bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700">
+                        {e.period}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 text-center bg-slate-50 dark:bg-slate-950 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800">
+                    <div>
+                      <span className="block text-[10px] uppercase font-bold text-slate-500">Cuota</span>
+                      <span className="text-xs font-mono font-extrabold text-slate-900 dark:text-white">${e.feeAmount.toLocaleString('es-ES')}</span>
+                    </div>
+                    <div>
+                      <span className="block text-[10px] uppercase font-bold text-slate-500">Entregado</span>
+                      <span className="text-xs font-mono font-extrabold text-emerald-700 dark:text-emerald-400">${e.amountPaid.toLocaleString('es-ES')}</span>
+                    </div>
+                    <div>
+                      <span className="block text-[10px] uppercase font-bold text-slate-500">Saldo</span>
+                      <span className={`text-xs font-mono font-extrabold ${saldo > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>
+                        ${saldo.toLocaleString('es-ES')}
+                      </span>
+                    </div>
+                  </div>
+
+                  {(e.tutorName || e.phone || e.receiptNumber) && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600 dark:text-slate-400">
+                      {e.tutorName && <span className="font-semibold">Tutor: {e.tutorName}</span>}
+                      {e.phone && (
+                        <a href={`tel:${e.phone}`} className="inline-flex items-center gap-1 font-mono text-blue-600 dark:text-blue-400 font-semibold">
+                          <Phone className="w-3 h-3" />
+                          {e.phone}
+                        </a>
+                      )}
+                      {e.receiptNumber && <span className="font-mono text-slate-500 ml-auto">{e.receiptNumber}</span>}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {e.isPaid ? (
+                        <button
+                          type="button"
+                          onClick={() => handleTogglePaid(e)}
+                          className="min-h-[38px] inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-extrabold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>PAGADO</span>
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleTogglePaid(e)}
+                            className="min-h-[38px] inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-black bg-emerald-600 text-white shadow-xs"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Marcar Pagado</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setQuickPayEnrollment(e);
+                              setExtraPaymentAmount('');
+                            }}
+                            className="min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-extrabold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700"
+                          >
+                            + Abonar
+                          </button>
+                        </>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditModal(e)}
+                        className="min-w-[40px] min-h-[40px] flex items-center justify-center text-slate-600 hover:text-blue-600 dark:text-slate-400 rounded-xl bg-slate-100 dark:bg-slate-800"
+                        title="Editar"
+                      >
+                        <Edit3 className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm(`¿Eliminar matrícula de "${e.memberName}"?`)) {
+                            onDeleteEnrollment(e.id);
+                          }
+                        }}
+                        className="min-w-[40px] min-h-[40px] flex items-center justify-center text-slate-600 hover:text-rose-600 dark:text-slate-400 rounded-xl bg-slate-100 dark:bg-slate-800"
+                        title="Eliminar"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Vista Escritorio (Tabla) */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs text-slate-800 dark:text-slate-200">
             <thead className="bg-slate-900 text-white uppercase text-[11px] font-black tracking-wider">
               <tr>
@@ -681,11 +818,11 @@ export const ClubEnrollmentSection: React.FC<ClubEnrollmentSectionProps> = ({
 
       {/* MODAL 1: REGISTRAR / EDITAR MATRÍCULA */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border-2 border-slate-300 dark:border-slate-700 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="px-6 py-4 bg-blue-600 text-white flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border-2 border-slate-300 dark:border-slate-700 overflow-hidden max-h-[92dvh] flex flex-col pb-safe animate-in fade-in zoom-in-95 duration-200">
+            <div className="px-5 sm:px-6 py-4 bg-blue-600 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
-                <GraduationCap className="w-5 h-5 text-blue-200" />
+                <GraduationCap className="w-5 h-5 text-blue-200 shrink-0" />
                 <h3 className="text-base font-extrabold text-white">
                   {editingEnrollment ? 'Editar Matrícula de Club' : 'Registrar Matrícula e Inscripción de Club'}
                 </h3>
@@ -693,13 +830,13 @@ export const ClubEnrollmentSection: React.FC<ClubEnrollmentSectionProps> = ({
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="text-blue-100 hover:text-white"
+                className="min-w-[40px] min-h-[40px] flex items-center justify-center text-blue-100 hover:text-white rounded-xl"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveEnrollment} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+            <form onSubmit={handleSaveEnrollment} className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1">
               {/* Miembro */}
               <div>
                 <label className="block text-xs font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-wider mb-1">
@@ -908,17 +1045,17 @@ export const ClubEnrollmentSection: React.FC<ClubEnrollmentSectionProps> = ({
               </div>
 
               {/* Buttons */}
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs font-extrabold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
+                  className="w-full sm:w-auto min-h-[44px] px-4 py-2 text-xs font-extrabold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 sm:bg-transparent rounded-xl"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-xs font-extrabold text-white bg-blue-600 hover:bg-blue-500 rounded-xl shadow-md transition-all flex items-center gap-1.5"
+                  className="w-full sm:w-auto min-h-[44px] px-5 py-2 text-xs font-extrabold text-white bg-blue-600 hover:bg-blue-500 rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5"
                 >
                   <Check className="w-4 h-4" />
                   <span>{editingEnrollment ? 'Guardar Cambios' : 'Registrar Matrícula'}</span>
@@ -931,8 +1068,8 @@ export const ClubEnrollmentSection: React.FC<ClubEnrollmentSectionProps> = ({
 
       {/* MODAL 2: ABONO RÁPIDO DE MATRÍCULA */}
       {quickPayEnrollment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="relative w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border-2 border-slate-300 dark:border-slate-700 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="relative w-full max-w-sm bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border-2 border-slate-300 dark:border-slate-700 overflow-hidden pb-safe animate-in fade-in zoom-in-95 duration-200">
             <div className="px-5 py-3.5 bg-blue-600 text-white flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Receipt className="w-4 h-4" />
@@ -941,7 +1078,7 @@ export const ClubEnrollmentSection: React.FC<ClubEnrollmentSectionProps> = ({
               <button
                 type="button"
                 onClick={() => setQuickPayEnrollment(null)}
-                className="text-blue-100 hover:text-white"
+                className="min-w-[36px] min-h-[36px] flex items-center justify-center text-blue-100 hover:text-white"
               >
                 <X className="w-4 h-4" />
               </button>

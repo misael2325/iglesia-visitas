@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="55%" stop-color="#1e293b" />
+      <stop offset="100%" stop-color="#1d4ed8" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#60a5fa" />
+      <stop offset="100%" stop-color="#3b82f6" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  <rect x="24" y="24" width="464" height="464" rx="92" fill="none" stroke="#60a5fa" stroke-opacity="0.25" stroke-width="4" />
+  <!-- Church / Eclesia Emblem centered inside safe zone -->
+  <g transform="translate(256, 266)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Cross at top -->
+    <line x1="0" y1="-148" x2="0" y2="-92" stroke="#93c5fd" stroke-width="18" />
+    <line x1="-24" y1="-126" x2="24" y2="-126" stroke="#93c5fd" stroke-width="18" />
+    <!-- Roof / Steeple -->
+    <path d="M-112 -18 L0 -96 L112 -18" stroke="url(#accentGrad)" stroke-width="22" fill="#1e3a8a" fill-opacity="0.45" />
+    <!-- Church Body -->
+    <path d="M-88 -26 L-88 110 L88 110 L88 -26" stroke="#ffffff" stroke-width="20" fill="#0f172a" fill-opacity="0.4" />
+    <!-- Side wings -->
+    <path d="M-132 24 L-88 4 L-88 110 L-132 110 Z" stroke="#93c5fd" stroke-width="16" fill="#1e3a8a" fill-opacity="0.4" />
+    <path d="M132 24 L88 4 L88 110 L132 110 Z" stroke="#93c5fd" stroke-width="16" fill="#1e3a8a" fill-opacity="0.4" />
+    <!-- Arched Door -->
+    <path d="M-28 110 L-28 48 A28 28 0 0 1 28 48 L28 110 Z" fill="url(#accentGrad)" stroke="#ffffff" stroke-width="10" />
+  </g>
+</svg>

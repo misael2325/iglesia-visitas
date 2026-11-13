@@ -14,7 +14,8 @@ import {
   CheckCircle2,
   TableProperties,
   ShieldCheck,
-  Layers
+  Layers,
+  Lock
 } from 'lucide-react';
 import { 
   Attendee, 
@@ -42,7 +43,9 @@ import {
   ChurchDataPayload,
   DEFAULT_SUPABASE_ANON_KEY,
   DEFAULT_SUPABASE_URL,
-  normalizeSupabaseUrl
+  PERMANENT_SYNC_CODE,
+  REQUIRED_DATABASE_TABLES,
+  getLocalDeletedIds
 } from '../services/supabaseClient';
 
 interface BackupSyncModalProps {
@@ -200,13 +203,15 @@ export const BackupSyncModal: React.FC<BackupSyncModalProps> = ({
     onClose();
   };
 
-  // Supabase Config Actions
+  // Supabase Config Actions (locked to permanent project code)
   const handleSaveConfig = () => {
-    const cleanUrl = normalizeSupabaseUrl(supabaseConfig.url);
-    const updated = { ...supabaseConfig, url: cleanUrl };
+    const updated = {
+      url: DEFAULT_SUPABASE_URL,
+      anonKey: DEFAULT_SUPABASE_ANON_KEY,
+      autoSync: true,
+    };
     setSupabaseConfigState(updated);
     saveSupabaseConfig(updated);
-    onNotify('Configuración de Supabase guardada.');
     return updated;
   };
 
@@ -237,6 +242,8 @@ export const BackupSyncModal: React.FC<BackupSyncModalProps> = ({
       camporeeShirts,
       clubEnrollments,
       biblicalCharacters,
+      contestConfig,
+      deletedIds: getLocalDeletedIds(),
     };
     const res = await pushDataToSupabase(payload);
     setIsPushing(false);
@@ -285,7 +292,7 @@ export const BackupSyncModal: React.FC<BackupSyncModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-extrabold text-white">Configuración del Sistema y Base de Datos</h2>
-              <p className="text-xs text-slate-300 font-medium">Verificación de tablas (7), sincronización en la nube Supabase y respaldos JSON</p>
+              <p className="text-xs text-slate-300 font-medium">Verificación de tablas (11), código permanente Supabase en tiempo real y respaldos JSON</p>
             </div>
           </div>
           <button
@@ -407,18 +414,7 @@ export const BackupSyncModal: React.FC<BackupSyncModalProps> = ({
                 </div>
 
                 <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {(tableReport?.tables || [
-                    { name: 'attendees', label: 'Asistentes y Visitas', submenu: 'Registro Visitas / Asistencia', exists: false, count: null },
-                    { name: 'church_events', label: 'Conferencias y Cultos', submenu: 'Registro Visitas / Conferencias', exists: false, count: null },
-                    { name: 'clubs', label: 'Clubes de la Iglesia', submenu: 'Clubes / Directorio', exists: false, count: null },
-                    { name: 'club_activities', label: 'Actividades de Recaudación', submenu: 'Clubes / Actividades', exists: false, count: null },
-                    { name: 'club_transactions', label: 'Ingresos y Egresos', submenu: 'Clubes / Finanzas', exists: false, count: null },
-                    { name: 'camporee_shirts', label: 'T-Shirts Camporee', submenu: 'Clubes / T-Shirts', exists: false, count: null },
-                    { name: 'club_enrollments', label: 'Matrículas y Membresía', submenu: 'Clubes / Matrícula', exists: false, count: null },
-                    { name: 'church_photos', label: 'Fotos de la Iglesia', submenu: 'Fotos / Galería', exists: false, count: null },
-                    { name: 'app_users', label: 'Usuarios y Perfiles (Roles)', submenu: 'Administración de Usuarios', exists: false, count: null },
-                    { name: 'church_store', label: 'Almacén Global y Zonas', submenu: 'Sincronización Unificada', exists: false, count: null },
-                  ]).map((t) => (
+                  {(tableReport?.tables || REQUIRED_DATABASE_TABLES.map((t) => ({ ...t, exists: false, count: null }))).map((t) => (
                     <div
                       key={t.name}
                       className="px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-950/50 transition-colors"
@@ -534,80 +530,64 @@ export const BackupSyncModal: React.FC<BackupSyncModalProps> = ({
                 </p>
               </div>
 
-              {/* Supabase credentials */}
+              {/* Permanent Locked Sync Code Banner */}
+              <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border-2 border-emerald-300 dark:border-emerald-800 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs font-extrabold text-emerald-900 dark:text-emerald-200">
+                    <Lock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <span>Código de Sincronización Permanente (Bloqueado)</span>
+                  </div>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-600 text-white">
+                    <ShieldCheck className="w-3 h-3" />
+                    <span>Permanente · No Editable</span>
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-950 border border-emerald-200 dark:border-emerald-800 font-mono text-xs font-extrabold text-slate-900 dark:text-emerald-300 select-all">
+                  <span>{PERMANENT_SYNC_CODE}</span>
+                  <Lock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                </div>
+                <p className="text-[11px] text-emerald-800 dark:text-emerald-300 font-medium">
+                  Este código está vinculado de forma fija al sistema. No importa desde qué computadora, celular o navegador lo abras: siempre se conectará en tiempo real a la misma base de datos sin permitir ediciones accidentales.
+                </p>
+              </div>
+
+              {/* Supabase credentials (Read-only / Locked) */}
               <div className="space-y-3">
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                      Supabase Project URL
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <Lock className="w-3 h-3 text-slate-400" />
+                      <span>Supabase Project URL (Fija)</span>
                     </label>
-                    {supabaseConfig.url !== DEFAULT_SUPABASE_URL && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setSupabaseConfigState({ ...supabaseConfig, url: DEFAULT_SUPABASE_URL })
-                        }
-                        className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
-                      >
-                        Restablecer URL por defecto
-                      </button>
-                    )}
                   </div>
                   <input
                     type="text"
-                    value={supabaseConfig.url}
-                    onChange={(e) =>
-                      setSupabaseConfigState({ ...supabaseConfig, url: e.target.value })
-                    }
-                    onBlur={() => {
-                      const clean = normalizeSupabaseUrl(supabaseConfig.url);
-                      setSupabaseConfigState({ ...supabaseConfig, url: clean });
-                      saveSupabaseConfig({ url: clean });
-                    }}
-                    placeholder="https://ewwtdeypwetvpjjbbgdi.supabase.co"
-                    className="w-full px-3.5 py-2 text-xs font-mono bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200"
+                    readOnly
+                    value={DEFAULT_SUPABASE_URL}
+                    className="w-full px-3.5 py-2 text-xs font-mono bg-slate-100 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-300 cursor-not-allowed select-all"
                   />
                 </div>
 
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                      Supabase Anon / Public Key
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <Lock className="w-3 h-3 text-slate-400" />
+                      <span>Supabase Anon / Public Key (Fija)</span>
                     </label>
-                    {supabaseConfig.anonKey !== DEFAULT_SUPABASE_ANON_KEY && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setSupabaseConfigState({ ...supabaseConfig, anonKey: DEFAULT_SUPABASE_ANON_KEY })
-                        }
-                        className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
-                      >
-                        Restablecer clave del proyecto
-                      </button>
-                    )}
                   </div>
                   <input
                     type="text"
-                    value={supabaseConfig.anonKey || DEFAULT_SUPABASE_ANON_KEY}
-                    onChange={(e) =>
-                      setSupabaseConfigState({ ...supabaseConfig, anonKey: e.target.value })
-                    }
-                    className="w-full px-3.5 py-2 text-xs font-mono bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100"
+                    readOnly
+                    value={DEFAULT_SUPABASE_ANON_KEY}
+                    className="w-full px-3.5 py-2 text-xs font-mono bg-slate-100 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-300 cursor-not-allowed select-all"
                   />
                 </div>
 
-                <div className="pt-2">
-                  <label className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={supabaseConfig.autoSync}
-                      onChange={(e) =>
-                        setSupabaseConfigState({ ...supabaseConfig, autoSync: e.target.checked })
-                      }
-                      className="rounded-sm text-blue-600 focus:ring-blue-500"
-                    />
-                    <span>Sincronización automática en la nube al realizar cambios en visitas o clubes</span>
-                  </label>
+                <div className="pt-1">
+                  <div className="flex items-center gap-2 text-xs font-bold text-emerald-700 dark:text-emerald-400">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>Sincronización automática en tiempo real activa permanentemente en todas las PCs</span>
+                  </div>
                 </div>
               </div>
 

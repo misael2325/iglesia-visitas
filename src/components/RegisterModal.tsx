@@ -64,26 +64,26 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-xs">
       <div 
-        className="relative w-full max-w-xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden max-h-[92vh] flex flex-col"
+        className="relative w-full max-w-xl bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden max-h-[92dvh] flex flex-col pb-safe"
         role="dialog"
         aria-modal="true"
       >
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white border-b border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-slate-800 rounded-lg text-blue-400 border border-slate-700">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 bg-slate-900 text-white border-b border-slate-800">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2 bg-slate-800 rounded-lg text-blue-400 border border-slate-700 shrink-0">
               <UserPlus className="w-5 h-5 text-blue-300" />
             </div>
-            <div>
-              <h2 className="text-lg font-bold tracking-tight text-white">Registrar Nueva Visita o Asistente</h2>
-              <p className="text-xs text-slate-300">Formulario de recepción y seguimiento para la iglesia</p>
+            <div className="min-w-0">
+              <h2 className="text-base sm:text-lg font-bold tracking-tight text-white truncate">Registrar Nueva Visita</h2>
+              <p className="text-xs text-slate-300 truncate">Recepción y seguimiento para la iglesia</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+            className="min-w-[40px] min-h-[40px] flex items-center justify-center p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors shrink-0"
             title="Cerrar ventana"
           >
             <X className="w-5 h-5" />
@@ -91,7 +91,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
         </div>
 
         {/* Modal Form */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
           {/* Active Event Banner if present */}
           {activeEvent && (
             <div className="p-3 bg-blue-50/80 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900 rounded-xl flex items-start gap-3">
@@ -253,17 +253,17 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
           </div>
 
           {/* Actions */}
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2.5 sm:gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+              className="min-h-[44px] px-4 py-2.5 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 sm:bg-transparent dark:bg-slate-800 sm:dark:bg-transparent hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-colors"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 active:bg-slate-950 dark:bg-blue-600 dark:hover:bg-blue-500 rounded-xl transition-colors shadow-sm flex items-center gap-2"
+              className="min-h-[44px] px-5 py-2.5 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 active:bg-slate-950 dark:bg-blue-600 dark:hover:bg-blue-500 rounded-xl transition-colors shadow-sm flex items-center justify-center gap-2"
             >
               <UserPlus className="w-4 h-4" />
               Guardar y Registrar Asistencia

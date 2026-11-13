@@ -164,7 +164,7 @@ ${shareLink}`;
   };
 
   return (
-    <div className={`min-h-screen ${darkMode ? 'dark bg-[#1c1712] text-[#f1e8da]' : 'bg-[#faf6ee] text-[#2b2118]'} transition-colors duration-200 flex flex-col font-serif`}>
+    <div className={`min-h-dvh pt-safe pb-safe ${darkMode ? 'dark bg-[#1c1712] text-[#f1e8da]' : 'bg-[#faf6ee] text-[#2b2118]'} transition-colors duration-200 flex flex-col font-serif`}>
       {/* Top Bar Navigation */}
       <header className="sticky top-0 z-40 border-b border-[#e3d8c6] dark:border-[#3d3329] bg-white/90 dark:bg-[#27201a]/90 backdrop-blur-md px-4 sm:px-6 py-3 transition-colors">
         <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
@@ -221,7 +221,7 @@ ${shareLink}`;
         {hasCoverPhoto ? (
           <div className="mb-8 rounded-3xl overflow-hidden shadow-lg border-2 border-[#e3d8c6] dark:border-[#3d3329] relative bg-black/10 dark:bg-black/40 group animate-in fade-in duration-300">
             <img
-              src={contestConfig!.headerBannerUrl}
+              src={activeConfig!.headerBannerUrl}
               alt={eventTitle}
               className="w-full h-48 sm:h-64 object-cover object-center"
             />
@@ -292,7 +292,7 @@ ${shareLink}`;
                   style={{ borderColor: primaryColor }}
                 >
                   <img
-                    src={contestConfig!.thankYouFlyerUrl}
+                    src={activeConfig!.thankYouFlyerUrl}
                     alt="Flyer Oficial de Agradecimiento"
                     className="w-full h-auto max-h-[460px] object-contain mx-auto"
                   />
@@ -306,7 +306,7 @@ ${shareLink}`;
                   </p>
                   <button
                     type="button"
-                    onClick={() => downloadPhotoFile(contestConfig!.thankYouFlyerUrl!, 'flyer-personaje-biblico.jpg')}
+                    onClick={() => downloadPhotoFile(activeConfig!.thankYouFlyerUrl!, 'flyer-personaje-biblico.jpg')}
                     className="text-xs font-sans text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 underline inline-flex items-center gap-1.5 cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5" />

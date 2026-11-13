@@ -579,56 +579,56 @@ export const ClubManager: React.FC<ClubManagerProps> = ({
       {selectedClubId === null && (
         <div className="space-y-6 animate-in fade-in duration-200">
           {/* Header Card for Directory */}
-          <div className="bg-white dark:bg-slate-900 rounded-3xl border-2 border-slate-300 dark:border-slate-700 shadow-md p-6 sm:p-8">
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-6 border-b-2 border-slate-200 dark:border-slate-800">
-              <div className="flex items-center gap-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl border-2 border-slate-300 dark:border-slate-700 shadow-md p-4 sm:p-8">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-5 sm:pb-6 border-b-2 border-slate-200 dark:border-slate-800">
+              <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
                 {onBackToPortal && (
                   <button
                     type="button"
                     onClick={onBackToPortal}
-                    className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-extrabold text-slate-800 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 border-2 border-slate-300 dark:border-slate-700 rounded-xl transition-all shadow-xs shrink-0"
+                    className="min-h-[40px] flex items-center gap-1.5 px-3 py-2 text-xs font-extrabold text-slate-800 dark:text-slate-100 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 border-2 border-slate-300 dark:border-slate-700 rounded-xl transition-all shadow-xs shrink-0"
                     title="Volver al Menú Principal"
                   >
                     <ArrowLeft className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    <span>Menú Principal</span>
+                    <span className="hidden sm:inline">Menú Principal</span>
                   </button>
                 )}
 
-                <div className="w-12 h-12 rounded-2xl bg-emerald-600 flex items-center justify-center text-white shadow-lg shrink-0">
-                  <Building2 className="w-6 h-6" />
+                <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-emerald-600 flex items-center justify-center text-white shadow-lg shrink-0">
+                  <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />
                 </div>
 
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h1 className="text-xl sm:text-2xl font-extrabold text-slate-950 dark:text-white tracking-tight">
-                      Directorio de Clubes y Ministerios
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                    <h1 className="text-lg sm:text-2xl font-extrabold text-slate-950 dark:text-white tracking-tight">
+                      Directorio de Clubes
                     </h1>
-                    <span className="text-[11px] uppercase font-black text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950 px-2.5 py-0.5 rounded-md border border-emerald-300 dark:border-emerald-800">
+                    <span className="text-[10px] sm:text-[11px] uppercase font-black text-emerald-800 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 rounded-md border border-emerald-300 dark:border-emerald-800">
                       Finanzas por Club
                     </span>
                   </div>
                   <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 font-medium mt-1">
-                    Haz clic en cualquier club o ministerio para abrir su panel financiero, registrar actividades, ingresos, egresos y calcular su ganancia neta.
+                    Toca cualquier club para abrir su panel financiero, actividades, ingresos y egresos.
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2.5 w-full md:w-auto justify-end">
+              <div className="grid grid-cols-2 sm:flex items-center gap-2 sm:gap-2.5 w-full md:w-auto justify-end">
                 <button
                   type="button"
                   onClick={() => setSelectedClubId('all')}
-                  className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 text-slate-900 dark:text-slate-100 font-extrabold text-xs border-2 border-slate-300 dark:border-slate-700 transition-all flex items-center gap-1.5 shadow-xs"
+                  className="min-h-[44px] px-3 sm:px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 text-slate-900 dark:text-slate-100 font-extrabold text-xs border-2 border-slate-300 dark:border-slate-700 transition-all flex items-center justify-center gap-1.5 shadow-xs"
                 >
-                  <BarChart2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  <span>Consolidado General</span>
+                  <BarChart2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span>Consolidado</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setIsNewClubModalOpen(true)}
-                  className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-md transition-all flex items-center gap-1.5"
+                  className="min-h-[44px] px-3 sm:px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-md transition-all flex items-center justify-center gap-1.5"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-4 h-4 shrink-0" />
                   <span>+ Nuevo Club</span>
                 </button>
               </div>
@@ -867,44 +867,41 @@ export const ClubManager: React.FC<ClubManagerProps> = ({
           {/* Top Header Card for Active Club */}
           <div className="bg-white dark:bg-slate-900 rounded-3xl border-2 border-slate-300 dark:border-slate-700 shadow-md overflow-hidden">
             {/* Dark Strip */}
-            <div className="px-6 py-4 bg-slate-900 text-white flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800">
-              <div className="flex items-center gap-3">
+            <div className="px-4 sm:px-6 py-4 bg-slate-900 text-white flex flex-col md:flex-row md:items-center justify-between gap-3.5 sm:gap-4 border-b border-slate-800">
+              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
                 <button
                   type="button"
                   onClick={() => setSelectedClubId(null)}
-                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-extrabold text-slate-100 bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-xl transition-all shadow-xs shrink-0"
+                  className="min-h-[40px] flex items-center gap-1.5 px-3 py-2 text-xs font-extrabold text-slate-100 bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded-xl transition-all shadow-xs shrink-0"
                   title="Volver al Directorio de Clubes"
                 >
                   <ArrowLeft className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>← Directorio Clubes</span>
+                  <span className="hidden xs:inline sm:inline">Clubes</span>
                 </button>
 
-                <div className="w-10 h-10 rounded-xl bg-emerald-950 border border-emerald-800 flex items-center justify-center text-emerald-400 shadow-xs shrink-0">
-                  <Building2 className="w-5 h-5 text-emerald-300" />
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-emerald-950 border border-emerald-800 flex items-center justify-center text-emerald-400 shadow-xs shrink-0">
+                  <Building2 className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-300" />
                 </div>
 
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h1 className="text-base sm:text-lg font-extrabold text-white tracking-tight">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                    <h1 className="text-base sm:text-lg font-extrabold text-white tracking-tight truncate">
                       {activeClub ? activeClub.name : 'Todos los Clubes (Consolidado)'}
                     </h1>
-                    <span className="text-[10px] uppercase font-black text-emerald-300 bg-emerald-950 px-2 py-0.5 rounded-sm border border-emerald-800">
-                      {activeClub ? 'Club Abierto' : 'Consolidado General'}
+                    <span className="text-[10px] uppercase font-black text-emerald-300 bg-emerald-950 px-2 py-0.5 rounded-sm border border-emerald-800 shrink-0">
+                      {activeClub ? 'Club Abierto' : 'Consolidado'}
                     </span>
                   </div>
 
                   {activeClub ? (
-                    <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-300">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mt-1 text-xs text-slate-300">
                       <span className="inline-flex items-center gap-1 font-bold text-white bg-slate-800 px-2 py-0.5 rounded-md border border-slate-700">
-                        <User className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Director: {activeClub.director || 'Sin asignar'}</span>
+                        <User className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span className="truncate max-w-[140px] sm:max-w-none">{activeClub.director || 'Sin asignar'}</span>
                       </span>
                       <span className="inline-flex items-center gap-1 font-bold text-white font-mono bg-slate-800 px-2 py-0.5 rounded-md border border-slate-700">
-                        <Calendar className="w-3.5 h-3.5 text-blue-400" />
-                        <span>Período: {activeClub.period || '2026'}</span>
-                      </span>
-                      <span className="text-slate-400 font-medium hidden sm:inline">
-                        · {activeClub.description || 'Club / Ministerio eclesiástico'}
+                        <Calendar className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                        <span>{activeClub.period || '2026'}</span>
                       </span>
                     </div>
                   ) : (
@@ -917,34 +914,10 @@ export const ClubManager: React.FC<ClubManagerProps> = ({
 
               {/* Quick Actions (Add Activity, Add Transaction, Edit Club, Delete Club, Share, PDF) */}
               <div className="flex flex-wrap items-center gap-2 no-print">
-                {activeClub && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenEditClub(activeClub)}
-                      className="px-3 py-2 text-xs font-bold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl transition-colors flex items-center gap-1.5 shadow-2xs"
-                      title="Editar Director, Período o Nombre de este club"
-                    >
-                      <Edit3 className="w-3.5 h-3.5 text-blue-400" />
-                      <span className="hidden sm:inline">Editar Club</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setClubToDelete(activeClub)}
-                      className="px-3 py-2 text-xs font-bold text-rose-300 bg-rose-950/60 hover:bg-rose-900/80 border border-rose-800 rounded-xl transition-colors flex items-center gap-1.5 shadow-2xs"
-                      title="Eliminar este club"
-                    >
-                      <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-                      <span className="hidden sm:inline">Eliminar</span>
-                    </button>
-                  </>
-                )}
-
                 <button
                   type="button"
                   onClick={() => handleOpenAddTx('ingreso')}
-                  className="px-3.5 py-2 text-xs font-extrabold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl transition-colors shadow-2xs flex items-center gap-1.5"
+                  className="min-h-[40px] flex-1 sm:flex-none px-3.5 py-2 text-xs font-extrabold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl transition-colors shadow-2xs flex items-center justify-center gap-1.5"
                 >
                   <ArrowUpRight className="w-4 h-4" />
                   <span>+ Ingreso</span>
@@ -953,7 +926,7 @@ export const ClubManager: React.FC<ClubManagerProps> = ({
                 <button
                   type="button"
                   onClick={() => handleOpenAddTx('egreso')}
-                  className="px-3.5 py-2 text-xs font-extrabold text-white bg-rose-600 hover:bg-rose-500 rounded-xl transition-colors shadow-2xs flex items-center gap-1.5"
+                  className="min-h-[40px] flex-1 sm:flex-none px-3.5 py-2 text-xs font-extrabold text-white bg-rose-600 hover:bg-rose-500 rounded-xl transition-colors shadow-2xs flex items-center justify-center gap-1.5"
                 >
                   <ArrowDownRight className="w-4 h-4" />
                   <span>- Egreso</span>
@@ -965,38 +938,64 @@ export const ClubManager: React.FC<ClubManagerProps> = ({
                     setNewActClubId(activeClub ? activeClub.id : (clubs[0]?.id || ''));
                     setIsNewActivityModalOpen(true);
                   }}
-                  className="px-3.5 py-2 text-xs font-extrabold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition-colors shadow-2xs flex items-center gap-1.5"
+                  className="min-h-[40px] flex-1 sm:flex-none px-3.5 py-2 text-xs font-extrabold text-white bg-blue-600 hover:bg-blue-500 rounded-xl transition-colors shadow-2xs flex items-center justify-center gap-1.5"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Actividad</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => setIsShareModalOpen(true)}
-                  className="p-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl transition-colors"
-                  title="Compartir balance por WhatsApp"
-                >
-                  <Share2 className="w-4 h-4 text-emerald-400" />
-                </button>
+                <div className="flex items-center gap-1.5">
+                  {activeClub && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditClub(activeClub)}
+                        className="min-h-[40px] min-w-[40px] px-2.5 sm:px-3 py-2 text-xs font-bold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl transition-colors flex items-center justify-center gap-1.5 shadow-2xs"
+                        title="Editar Director, Período o Nombre de este club"
+                      >
+                        <Edit3 className="w-3.5 h-3.5 text-blue-400" />
+                        <span className="hidden sm:inline">Editar Club</span>
+                      </button>
 
-                <button
-                  type="button"
-                  onClick={handleExportPDF}
-                  className="p-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl transition-colors"
-                  title="Descargar Reporte en PDF"
-                >
-                  <Download className="w-4 h-4 text-blue-400" />
-                </button>
+                      <button
+                        type="button"
+                        onClick={() => setClubToDelete(activeClub)}
+                        className="min-h-[40px] min-w-[40px] px-2.5 sm:px-3 py-2 text-xs font-bold text-rose-300 bg-rose-950/60 hover:bg-rose-900/80 border border-rose-800 rounded-xl transition-colors flex items-center justify-center gap-1.5 shadow-2xs"
+                        title="Eliminar este club"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                        <span className="hidden sm:inline">Eliminar</span>
+                      </button>
+                    </>
+                  )}
 
-                <button
-                  type="button"
-                  onClick={handlePrint}
-                  className="p-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl transition-colors"
-                  title="Imprimir balance"
-                >
-                  <Printer className="w-4 h-4 text-slate-300" />
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsShareModalOpen(true)}
+                    className="min-h-[40px] min-w-[40px] p-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl transition-colors flex items-center justify-center"
+                    title="Compartir balance por WhatsApp"
+                  >
+                    <Share2 className="w-4 h-4 text-emerald-400" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleExportPDF}
+                    className="min-h-[40px] min-w-[40px] p-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl transition-colors flex items-center justify-center"
+                    title="Descargar Reporte en PDF"
+                  >
+                    <Download className="w-4 h-4 text-blue-400" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handlePrint}
+                    className="hidden sm:flex min-h-[40px] min-w-[40px] p-2 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl transition-colors items-center justify-center"
+                    title="Imprimir balance"
+                  >
+                    <Printer className="w-4 h-4 text-slate-300" />
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1285,8 +1284,92 @@ export const ClubManager: React.FC<ClubManagerProps> = ({
                 </button>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
+              <>
+                {/* Mobile Card List for Activities */}
+                <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
+                  {stats.activityAnalysis.map((item) => {
+                    const isProfitPositive = item.ganancia >= 0;
+                    return (
+                      <div key={item.activity.id} className="p-4 space-y-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="font-extrabold text-sm text-slate-900 dark:text-white block">
+                              {item.activity.name}
+                            </span>
+                            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                              {item.activity.clubName} · {formatSpanishDate(item.activity.date)}
+                            </span>
+                          </div>
+                          <span className={`px-2 py-0.5 rounded-md font-bold text-[11px] shrink-0 ${
+                            item.margen >= 40
+                              ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                              : item.margen > 0
+                              ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                              : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                          }`}>
+                            {item.margen.toFixed(0)}%
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2 text-center bg-slate-50 dark:bg-slate-800/60 rounded-xl p-2 border border-slate-200 dark:border-slate-700 font-mono">
+                          <div>
+                            <span className="block text-[10px] text-slate-500 uppercase font-sans font-bold">Ingreso</span>
+                            <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400">
+                              ${item.ingresos.toLocaleString('es-ES', { minimumFractionDigits: 0 })}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-[10px] text-slate-500 uppercase font-sans font-bold">Egreso</span>
+                            <span className="text-xs font-bold text-rose-600 dark:text-rose-400">
+                              ${item.egresos.toLocaleString('es-ES', { minimumFractionDigits: 0 })}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-[10px] text-slate-500 uppercase font-sans font-bold">Neto</span>
+                            <span className={`text-xs font-extrabold ${isProfitPositive ? 'text-blue-700 dark:text-blue-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                              {isProfitPositive ? '+' : ''}${item.ganancia.toLocaleString('es-ES', { minimumFractionDigits: 0 })}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 no-print">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenAddTx('ingreso', item.activity.id)}
+                            className="flex-1 min-h-[38px] rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-bold flex items-center justify-center gap-1"
+                          >
+                            <ArrowUpRight className="w-3.5 h-3.5" />
+                            <span>+ Ingreso</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenAddTx('egreso', item.activity.id)}
+                            className="flex-1 min-h-[38px] rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-bold flex items-center justify-center gap-1"
+                          >
+                            <ArrowDownRight className="w-3.5 h-3.5" />
+                            <span>- Egreso</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm(`¿Deseas eliminar la actividad "${item.activity.name}"?`)) {
+                                onDeleteActivity(item.activity.id);
+                              }
+                            }}
+                            className="min-w-[38px] min-h-[38px] rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-rose-600 flex items-center justify-center"
+                            title="Eliminar actividad"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Desktop Table */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full text-left text-xs">
                   <thead className="bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 font-semibold uppercase tracking-wider border-b border-slate-200 dark:border-slate-800">
                     <tr>
                       <th className="px-5 py-3.5">Nombre de la Actividad</th>
@@ -1411,6 +1494,7 @@ export const ClubManager: React.FC<ClubManagerProps> = ({
                   </tfoot>
                 </table>
               </div>
+              </>
             )}
           </div>
         </div>
@@ -1481,8 +1565,59 @@ export const ClubManager: React.FC<ClubManagerProps> = ({
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+            <>
+              {/* Mobile Card List for Ledger Transactions */}
+              <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
+                {filteredTransactions.map((tx) => (
+                  <div key={tx.id} className="p-4 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-flex items-center gap-0.5 text-[11px] px-2 py-0.5 rounded-md font-bold border ${
+                            tx.type === 'ingreso'
+                              ? 'text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800'
+                              : 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800'
+                          }`}>
+                            {tx.type === 'ingreso' ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                            {tx.type === 'ingreso' ? 'Ingreso' : 'Egreso'}
+                          </span>
+                          <span className="text-[11px] font-mono text-slate-500">{formatSpanishDate(tx.date)}</span>
+                        </div>
+                        <p className="text-sm font-bold text-slate-900 dark:text-white mt-1">
+                          {tx.description}
+                        </p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          {tx.activityName} · {tx.clubName}
+                        </p>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <span className={`font-mono font-extrabold text-sm block ${
+                          tx.type === 'ingreso' ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+                        }`}>
+                          {tx.type === 'ingreso' ? '+' : '-'}${Number(tx.amount).toLocaleString('es-ES', { minimumFractionDigits: 2 })}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(`¿Deseas eliminar el movimiento "${tx.description}"?`)) {
+                              onDeleteTransaction(tx.id);
+                            }
+                          }}
+                          className="mt-1 inline-flex items-center gap-1 text-[11px] text-rose-500 font-semibold px-2 py-1 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 no-print"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Borrar</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop Table */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-left text-xs">
                 <thead className="bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 font-semibold uppercase tracking-wider border-b border-slate-200 dark:border-slate-800">
                   <tr>
                     <th className="px-5 py-3">Fecha</th>
@@ -1563,6 +1698,7 @@ export const ClubManager: React.FC<ClubManagerProps> = ({
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </div>
       )}

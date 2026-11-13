@@ -51,9 +51,9 @@ export const PortalEntry: React.FC<PortalEntryProps> = ({
   onSelectModule,
 }) => {
   return (
-    <div className="py-4 sm:py-8 space-y-8 animate-in fade-in duration-300">
+    <div className="py-2 sm:py-8 space-y-6 sm:space-y-8 animate-in fade-in duration-300">
       {/* Welcome Banner */}
-      <div className="text-center max-w-3xl mx-auto space-y-3">
+      <div className="text-center max-w-3xl mx-auto space-y-2.5 sm:space-y-3 px-1">
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-100 dark:bg-blue-950 border border-blue-300 dark:border-blue-800 text-blue-800 dark:text-blue-300 text-xs font-extrabold tracking-wide uppercase">
           <Church className="w-4 h-4 text-blue-600 dark:text-blue-400" />
           <span>Portal de Entrada General · Eclesia</span>
@@ -63,8 +63,8 @@ export const PortalEntry: React.FC<PortalEntryProps> = ({
           Bienvenido/a, <span className="text-blue-600 dark:text-blue-400">{currentUser.name}</span>
         </h1>
 
-        <p className="text-sm sm:text-base text-slate-700 dark:text-slate-200 font-medium max-w-2xl mx-auto">
-          Selecciona el módulo con el que deseas trabajar hoy. Haz clic en cualquiera de los tres cuadros rectangulares para acceder:
+        <p className="text-xs sm:text-base text-slate-700 dark:text-slate-200 font-medium max-w-2xl mx-auto">
+          Selecciona el módulo con el que deseas trabajar hoy:
         </p>
 
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white dark:bg-slate-900 border-2 border-slate-300 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 font-bold shadow-xs">
@@ -74,7 +74,7 @@ export const PortalEntry: React.FC<PortalEntryProps> = ({
       </div>
 
       {/* The Three Grand Rectangular Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-7 max-w-7xl mx-auto">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-7 max-w-7xl mx-auto">
         {/* CARD 1: REGISTRO VISITAS */}
         <div
           onClick={() => onSelectModule('visitas')}
@@ -86,7 +86,7 @@ export const PortalEntry: React.FC<PortalEntryProps> = ({
               onSelectModule('visitas');
             }
           }}
-          className="group relative bg-white dark:bg-slate-900 rounded-3xl border-2 border-slate-300 dark:border-slate-700 hover:border-blue-600 dark:hover:border-blue-500 p-6 sm:p-7 shadow-md hover:shadow-2xl transition-all duration-300 hover:-translate-y-1.5 flex flex-col justify-between cursor-pointer overflow-hidden text-left"
+          className="group relative bg-white dark:bg-slate-900 rounded-3xl border-2 border-slate-300 dark:border-slate-700 hover:border-blue-600 dark:hover:border-blue-500 p-5 sm:p-7 shadow-md hover:shadow-2xl active:scale-[0.99] transition-all duration-300 hover:-translate-y-1.5 flex flex-col justify-between cursor-pointer overflow-hidden text-left"
         >
           {/* Accent Header Bar */}
           <div className="absolute top-0 left-0 right-0 h-2.5 bg-blue-600 group-hover:h-3 transition-all" />
@@ -186,7 +186,7 @@ export const PortalEntry: React.FC<PortalEntryProps> = ({
               onSelectModule('clubes');
             }
           }}
-          className="group relative bg-white dark:bg-slate-900 rounded-3xl border-2 border-slate-300 dark:border-slate-700 hover:border-emerald-600 dark:hover:border-emerald-500 p-6 sm:p-7 shadow-md hover:shadow-2xl transition-all duration-300 hover:-translate-y-1.5 flex flex-col justify-between cursor-pointer overflow-hidden text-left"
+          className="group relative bg-white dark:bg-slate-900 rounded-3xl border-2 border-slate-300 dark:border-slate-700 hover:border-emerald-600 dark:hover:border-emerald-500 p-5 sm:p-7 shadow-md hover:shadow-2xl active:scale-[0.99] transition-all duration-300 hover:-translate-y-1.5 flex flex-col justify-between cursor-pointer overflow-hidden text-left"
         >
           {/* Accent Header Bar */}
           <div className="absolute top-0 left-0 right-0 h-2.5 bg-emerald-600 group-hover:h-3 transition-all" />
@@ -288,7 +288,7 @@ export const PortalEntry: React.FC<PortalEntryProps> = ({
               onSelectModule('fotos');
             }
           }}
-          className="group relative bg-white dark:bg-slate-900 rounded-3xl border-2 border-slate-300 dark:border-slate-700 hover:border-violet-600 dark:hover:border-violet-500 p-6 sm:p-7 shadow-md hover:shadow-2xl transition-all duration-300 hover:-translate-y-1.5 flex flex-col justify-between cursor-pointer overflow-hidden text-left"
+          className="group relative bg-white dark:bg-slate-900 rounded-3xl border-2 border-slate-300 dark:border-slate-700 hover:border-violet-600 dark:hover:border-violet-500 p-5 sm:p-7 shadow-md hover:shadow-2xl active:scale-[0.99] transition-all duration-300 hover:-translate-y-1.5 flex flex-col justify-between cursor-pointer overflow-hidden text-left"
         >
           {/* Accent Header Bar */}
           <div className="absolute top-0 left-0 right-0 h-2.5 bg-violet-600 group-hover:h-3 transition-all" />
@@ -380,31 +380,34 @@ export const PortalEntry: React.FC<PortalEntryProps> = ({
 
       {/* FEATURED EVENT BANNER: IMITA TU PERSONAJE BÍBLICO */}
       <div className="max-w-7xl mx-auto">
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-600/15 dark:from-amber-950/40 dark:via-orange-950/20 dark:to-amber-900/40 border-2 border-amber-300 dark:border-amber-700/60 p-6 sm:p-7 shadow-md flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="flex items-center gap-5 text-left">
-            <div className="w-16 h-16 rounded-2xl bg-amber-600 dark:bg-amber-500 text-white flex items-center justify-center text-3xl shadow-lg shrink-0">
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-600/15 dark:from-amber-950/40 dark:via-orange-950/20 dark:to-amber-900/40 border-2 border-amber-300 dark:border-amber-700/60 p-5 sm:p-7 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-6">
+          <div className="flex items-start sm:items-center gap-3.5 sm:gap-5 text-left">
+            <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-amber-600 dark:bg-amber-500 text-white flex items-center justify-center text-2xl sm:text-3xl shadow-lg shrink-0">
               📖
             </div>
-            <div className="space-y-1">
-              <div className="inline-flex items-center gap-2 px-3 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/60 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 text-[11px] font-extrabold uppercase tracking-wide">
-                <Sparkles className="w-3 h-3" />
-                <span>Evento Especial · 28 de Noviembre de 2026</span>
+            <div className="space-y-1 min-w-0">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/60 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wide">
+                <Sparkles className="w-3 h-3 shrink-0" />
+                <span>Evento · 28 Nov 2026</span>
               </div>
-              <h3 className="text-xl font-extrabold text-slate-950 dark:text-white">
+              <h3 className="text-lg sm:text-xl font-extrabold text-slate-950 dark:text-white leading-snug">
                 Concurso Bíblico: Imita tu Personaje Bíblico
               </h3>
               <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 font-medium max-w-xl">
-                Inscripciones abiertas para participantes, requerimientos técnicos (utilería y música) y planilla oficial para el jurado calificador.
+                Inscripciones abiertas para participantes, requerimientos técnicos y planilla oficial para el jurado calificador.
               </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 shrink-0 w-full md:w-auto justify-end">
-            <div className="px-3.5 py-2 rounded-2xl bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700/80 text-center font-mono shadow-xs">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 shrink-0 w-full md:w-auto">
+            <div className="px-3.5 py-2 rounded-2xl bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700/80 text-center font-mono shadow-xs flex sm:block items-center justify-between">
+              <span className="text-[11px] sm:hidden text-slate-600 dark:text-slate-400 font-extrabold uppercase">
+                Inscritos totales:
+              </span>
               <span className="block text-lg font-black text-amber-700 dark:text-amber-400">
                 {biblicalCharactersCount}
               </span>
-              <span className="text-[10px] text-slate-600 dark:text-slate-400 font-extrabold uppercase">
+              <span className="hidden sm:block text-[10px] text-slate-600 dark:text-slate-400 font-extrabold uppercase">
                 Inscritos
               </span>
             </div>
@@ -412,11 +415,11 @@ export const PortalEntry: React.FC<PortalEntryProps> = ({
             <button
               type="button"
               onClick={() => onSelectModule('personaje_biblico')}
-              className="px-5 py-3 rounded-2xl bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-xs sm:text-sm inline-flex items-center gap-2 shadow-md hover:shadow-amber-500/25 transition-all cursor-pointer"
+              className="min-h-[44px] px-5 py-3 rounded-2xl bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-xs sm:text-sm inline-flex items-center justify-center gap-2 shadow-md hover:shadow-amber-500/25 transition-all cursor-pointer"
             >
-              <BookOpen className="w-4 h-4" />
+              <BookOpen className="w-4 h-4 shrink-0" />
               <span>Gestionar Inscripciones y Jurado</span>
-              <ArrowRight className="w-4 h-4" />
+              <ArrowRight className="w-4 h-4 shrink-0" />
             </button>
           </div>
         </div>
