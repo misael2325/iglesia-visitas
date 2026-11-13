@@ -6,9 +6,10 @@ import {
   Calendar, 
   MapPin, 
   ArrowUpRight, 
-  ArrowDownRight,
   Sparkles,
-  PieChart
+  PieChart,
+  CheckCircle2,
+  CalendarCheck2
 } from 'lucide-react';
 import { Attendee, DayInfo, ChurchEvent } from '../types';
 
@@ -26,19 +27,20 @@ export const WeeklyStatsView: React.FC<WeeklyStatsViewProps> = ({
   // Current week date list
   const currentWeekDates = useMemo(() => weekDays.map((d) => d.dateString), [weekDays]);
 
-  // Compute metrics for current week
+  // Compute metrics strictly based on real registered data
   const stats = useMemo(() => {
-    // Attendees active this week
     let attendeesThisWeek = 0;
     let newVisitorsThisWeek = 0;
-    let totalMarks = 0;
+    let totalMarksInWeek = 0;
 
-    // Day by day distribution for L, M, Mi, J, V, S, D
+    // Day by day distribution for L, M, Mi, J, V, S, D in the active week
     const dayCounts = weekDays.map((day) => {
       let count = 0;
+      let visitorsOnDay = 0;
       attendees.forEach((a) => {
-        if (a.attendance[day.dateString]) {
+        if (a.attendance && a.attendance[day.dateString]) {
           count++;
+          if (a.type === 'visitante') visitorsOnDay++;
         }
       });
       return {
@@ -46,17 +48,18 @@ export const WeeklyStatsView: React.FC<WeeklyStatsViewProps> = ({
         fullName: day.fullName,
         dateString: day.dateString,
         count,
+        visitorsOnDay,
         isToday: day.isToday,
       };
     });
 
-    // Per attendee calculations
+    // Real per-attendee calculations
     attendees.forEach((a) => {
       let attendedInWeek = false;
       currentWeekDates.forEach((dateStr) => {
-        if (a.attendance[dateStr]) {
+        if (a.attendance && a.attendance[dateStr]) {
           attendedInWeek = true;
-          totalMarks++;
+          totalMarksInWeek++;
         }
       });
 
@@ -68,15 +71,24 @@ export const WeeklyStatsView: React.FC<WeeklyStatsViewProps> = ({
       }
     });
 
+    // Classification
+    const totalRegistered = attendees.length;
+    const totalVisitors = attendees.filter((a) => a.type === 'visitante').length;
+    const totalRecurring = attendees.filter((a) => a.type === 'recurrente').length;
+    const totalMembers = attendees.filter((a) => a.type === 'miembro').length;
+
     // Zone breakdown
-    const zoneMap: Record<string, { total: number; visitors: number }> = {};
+    const zoneMap: Record<string, { total: number; visitors: number; members: number }> = {};
     attendees.forEach((a) => {
-      if (!zoneMap[a.zone]) {
-        zoneMap[a.zone] = { total: 0, visitors: 0 };
+      const z = a.zone || 'Sin Zona';
+      if (!zoneMap[z]) {
+        zoneMap[z] = { total: 0, visitors: 0, members: 0 };
       }
-      zoneMap[a.zone].total++;
+      zoneMap[z].total++;
       if (a.type === 'visitante') {
-        zoneMap[a.zone].visitors++;
+        zoneMap[z].visitors++;
+      } else {
+        zoneMap[z].members++;
       }
     });
 
@@ -84,248 +96,192 @@ export const WeeklyStatsView: React.FC<WeeklyStatsViewProps> = ({
       .map(([zone, data]) => ({ zone, ...data }))
       .sort((a, b) => b.total - a.total);
 
-    // Multi-week history simulation for trend visualization (6 weeks)
-    // We base current week on real data and past 5 weeks on realistic historical trajectory
-    const simulatedWeeks = [
-      { week: 'Sem 38', total: Math.max(12, Math.round(attendeesThisWeek * 0.72)), visitors: Math.max(3, Math.round(newVisitorsThisWeek * 0.6)) },
-      { week: 'Sem 39', total: Math.max(15, Math.round(attendeesThisWeek * 0.81)), visitors: Math.max(4, Math.round(newVisitorsThisWeek * 0.7)) },
-      { week: 'Sem 40', total: Math.max(18, Math.round(attendeesThisWeek * 0.89)), visitors: Math.max(5, Math.round(newVisitorsThisWeek * 0.85)) },
-      { week: 'Sem 41', total: Math.max(19, Math.round(attendeesThisWeek * 0.94)), visitors: Math.max(5, Math.round(newVisitorsThisWeek * 0.9)) },
-      { week: 'Sem 42', total: Math.max(21, Math.round(attendeesThisWeek * 0.97)), visitors: Math.max(6, Math.round(newVisitorsThisWeek * 0.95)) },
-      { week: 'Semana Actual', total: Math.max(attendeesThisWeek, 24), visitors: Math.max(newVisitorsThisWeek, 7) },
-    ];
+    // Retention rate: attendees who have attended on more than 1 occasion
+    const multiAttendanceCount = attendees.filter(
+      (a) => a.attendance && Object.values(a.attendance).filter(Boolean).length > 1
+    ).length;
+    const retentionRate = totalRegistered > 0 ? Math.round((multiAttendanceCount / totalRegistered) * 100) : 0;
 
-    // Growth percentage compared to previous week
-    const prevWeekTotal = simulatedWeeks[4].total;
-    const curWeekTotal = simulatedWeeks[5].total;
-    const growthPercent = prevWeekTotal > 0 ? Math.round(((curWeekTotal - prevWeekTotal) / prevWeekTotal) * 100) : 12;
-
-    // Classification
-    const totalRegistered = attendees.length;
-    const totalVisitors = attendees.filter((a) => a.type === 'visitante').length;
-    const totalRecurring = attendees.filter((a) => a.type === 'recurrente').length;
-    const totalMembers = attendees.filter((a) => a.type === 'miembro').length;
-
-    // Retention rate: attendees who have more than 1 attendance
-    const multiAttendanceCount = attendees.filter((a) => Object.values(a.attendance).filter(Boolean).length > 1).length;
-    const retentionRate = totalRegistered > 0 ? Math.round((multiAttendanceCount / totalRegistered) * 100) : 75;
+    // Event attendance stats
+    const eventStats = events.map((evt) => {
+      const attendingPersons = attendees.filter(
+        (a) => (evt.attendees && evt.attendees.includes(a.id)) || (evt.date && a.attendance && a.attendance[evt.date])
+      );
+      const visitors = attendingPersons.filter((a) => a.type === 'visitante').length;
+      return {
+        id: evt.id,
+        title: evt.title,
+        date: evt.date,
+        total: attendingPersons.length,
+        visitors,
+        members: attendingPersons.length - visitors,
+      };
+    });
 
     return {
-      attendeesThisWeek: curWeekTotal,
-      newVisitorsThisWeek: simulatedWeeks[5].visitors,
-      growthPercent,
+      attendeesThisWeek,
+      newVisitorsThisWeek,
+      totalMarksInWeek,
       dayCounts,
       zoneStats,
-      simulatedWeeks,
       totalRegistered,
       totalVisitors,
       totalRecurring,
       totalMembers,
       retentionRate,
+      eventStats,
     };
-  }, [attendees, currentWeekDates, weekDays]);
+  }, [attendees, events, currentWeekDates, weekDays]);
 
   // Max value for scaling day bar chart
   const maxDayCount = Math.max(...stats.dayCounts.map((d) => d.count), 1);
-  const maxWeekCount = Math.max(...stats.simulatedWeeks.map((w) => w.total), 1);
+  const maxEventCount = Math.max(...stats.eventStats.map((e) => e.total), 1);
 
   return (
     <div className="space-y-6">
-      {/* Overview Header */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* Overview Control Box */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-bold tracking-tight text-slate-900 flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-indigo-600" />
-            <span>Estadísticas Generales de Crecimiento Semanal</span>
+          <h2 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-blue-500" />
+            <span>Estadísticas Reales del Padrón y Asistencias</span>
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Métricas de asistencia, nuevas visitas congregacionales y expansión por zonas
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Métricas generadas 100% en base a los registros reales de visitas, asistencias marcadas y eventos
           </p>
         </div>
 
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-bold">
-          <ArrowUpRight className="w-4 h-4 text-emerald-600" />
-          <span>+{stats.growthPercent}% Crecimiento esta semana</span>
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 rounded-xl text-blue-800 dark:text-blue-300 text-xs font-bold shrink-0">
+          <CheckCircle2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+          <span>Sincronizado en Tiempo Real con Registros</span>
         </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* 4 KPI Cards ("Cuadros de Resumen con datos reales") */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+        {/* KPI 1: Asistencia en la Semana Activa */}
+        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
               Asistencia Esta Semana
             </span>
-            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+            <div className="p-2 bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 rounded-lg border border-blue-200 dark:border-blue-900">
               <Users className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-slate-900 tabular-nums">
+            <span className="text-3xl font-extrabold text-slate-900 dark:text-white tabular-nums">
               {stats.attendeesThisWeek}
             </span>
-            <span className="text-xs font-bold text-emerald-600 flex items-center">
-              <ArrowUpRight className="w-3.5 h-3.5" />
-              +{stats.growthPercent}%
-            </span>
+            <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">personas</span>
           </div>
-          <p className="text-xs text-slate-500 mt-1">Personas activas en la congregación</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            {stats.totalMarksInWeek} asistencias marcadas en total
+          </p>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+        {/* KPI 2: Nuevas Visitas Registradas */}
+        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Nuevas Visitas
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              Visitas en el Sistema
             </span>
-            <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+            <div className="p-2 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 rounded-lg border border-emerald-200 dark:border-emerald-900">
               <UserPlus className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-emerald-700 tabular-nums">
-              {stats.newVisitorsThisWeek}
+            <span className="text-3xl font-extrabold text-emerald-700 dark:text-emerald-400 tabular-nums">
+              {stats.totalVisitors}
             </span>
-            <span className="text-xs text-slate-500 font-medium">almas nuevas</span>
+            <span className="text-xs text-emerald-600 dark:text-emerald-400 font-bold">
+              {stats.newVisitorsThisWeek} activas esta semana
+            </span>
           </div>
-          <p className="text-xs text-slate-500 mt-1">Registradas para seguimiento pastoral</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            Almas nuevas para seguimiento pastoral
+          </p>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+        {/* KPI 3: Tasa de Retención Real */}
+        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
               Tasa de Retención
             </span>
-            <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
+            <div className="p-2 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 rounded-lg border border-indigo-200 dark:border-indigo-900">
               <Sparkles className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-blue-700 tabular-nums">
+            <span className="text-3xl font-extrabold text-indigo-700 dark:text-indigo-400 tabular-nums">
               {stats.retentionRate}%
             </span>
-            <span className="text-xs text-blue-600 font-medium">fidelidad</span>
+            <span className="text-xs text-indigo-600 dark:text-indigo-400 font-medium">constancia</span>
           </div>
-          <p className="text-xs text-slate-500 mt-1">Asisten a más de una actividad</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            Personas con más de 1 asistencia registrada
+          </p>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+        {/* KPI 4: Total Padrón */}
+        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              Total Padrón Iglesia
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              Total Padrón Registrado
             </span>
-            <div className="p-2 bg-purple-50 text-purple-600 rounded-lg">
+            <div className="p-2 bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 rounded-lg border border-purple-200 dark:border-purple-900">
               <PieChart className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-slate-900 tabular-nums">
+            <span className="text-3xl font-extrabold text-slate-900 dark:text-white tabular-nums">
               {stats.totalRegistered}
             </span>
-            <span className="text-xs text-slate-500">en sistema</span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">personas</span>
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            {stats.totalVisitors} visitas · {stats.totalMembers} miembros
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            {stats.totalMembers} miembros · {stats.totalRecurring} recurrentes · {stats.totalVisitors} visitas
           </p>
         </div>
       </div>
 
-      {/* 2 Main Visual Charts: Multi-Week Trend & Daily Day Distribution (L, M, Mi, J, V, S, D) */}
+      {/* 2 Main Visual Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Trend Bar Chart: 6 Weeks */}
-        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Tendencia de Crecimiento (Últimas 6 Semanas)</h3>
-                <p className="text-xs text-slate-500">Comparativa de asistencia total vs visitas nuevas</p>
-              </div>
-              <div className="flex items-center gap-3 text-xs">
-                <span className="flex items-center gap-1.5 text-slate-600">
-                  <span className="w-3 h-3 bg-indigo-600 rounded-xs"></span> Total
-                </span>
-                <span className="flex items-center gap-1.5 text-slate-600">
-                  <span className="w-3 h-3 bg-emerald-500 rounded-xs"></span> Visitas
-                </span>
-              </div>
-            </div>
-
-            {/* Bars container */}
-            <div className="h-56 flex items-end justify-between gap-3 pt-6 pb-2 border-b border-slate-200">
-              {stats.simulatedWeeks.map((w, idx) => {
-                const totalHeightPct = Math.round((w.total / maxWeekCount) * 100);
-                const visitorHeightPct = Math.round((w.visitors / maxWeekCount) * 100);
-                const isCurrent = idx === stats.simulatedWeeks.length - 1;
-
-                return (
-                  <div key={w.week} className="flex-1 flex flex-col items-center h-full justify-end group">
-                    <div className="text-[11px] font-bold text-slate-700 opacity-0 group-hover:opacity-100 transition-opacity mb-1 tabular-nums">
-                      {w.total}
-                    </div>
-                    <div className="w-full flex items-end justify-center gap-1 h-full">
-                      {/* Total bar */}
-                      <div
-                        style={{ height: `${totalHeightPct}%` }}
-                        className={`w-1/2 rounded-t-md transition-all duration-300 ${
-                          isCurrent ? 'bg-indigo-600' : 'bg-slate-300 group-hover:bg-indigo-400'
-                        }`}
-                        title={`${w.week} - Total Asistentes: ${w.total}`}
-                      />
-                      {/* Visitor bar */}
-                      <div
-                        style={{ height: `${visitorHeightPct}%` }}
-                        className="w-1/2 bg-emerald-500 rounded-t-md transition-all duration-300 group-hover:bg-emerald-600"
-                        title={`${w.week} - Nuevas Visitas: ${w.visitors}`}
-                      />
-                    </div>
-                    <span className={`text-[11px] mt-2 font-medium truncate max-w-full ${
-                      isCurrent ? 'text-indigo-600 font-bold' : 'text-slate-500'
-                    }`}>
-                      {w.week}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          <p className="text-xs text-slate-500 mt-3 text-center">
-            El crecimiento promedio semanal de la iglesia se mantiene positivo en el último trimestre.
-          </p>
-        </div>
-
         {/* Daily Distribution (L, M, Mi, J, V, S, D) */}
-        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">
-                  Asistencia por Día de la Semana (<span className="text-indigo-600">L, M, Mi, J, V, S, D</span>)
-                </h3>
-                <p className="text-xs text-slate-500">Distribución de asistentes en la semana actual</p>
-              </div>
-              <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-md">
-                Esta semana
-              </span>
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden flex flex-col justify-between">
+          <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
+            <div>
+              <h3 className="text-sm font-bold tracking-tight text-white">
+                Asistencia por Día (<span className="text-blue-300 font-extrabold">L, M, Mi, J, V, S, D</span>)
+              </h3>
+              <p className="text-xs text-slate-300">Conteo exacto de tachados en la semana activa</p>
             </div>
+            <span className="text-xs font-semibold text-blue-200 bg-blue-950 border border-blue-800 px-2.5 py-1 rounded-md">
+              Semana Actual
+            </span>
+          </div>
 
+          <div className="p-6 flex-1 flex flex-col justify-between">
             {/* Daily Bars */}
-            <div className="h-56 flex items-end justify-between gap-2.5 pt-6 pb-2 border-b border-slate-200">
+            <div className="h-56 flex items-end justify-between gap-2.5 pt-6 pb-2 border-b border-slate-200 dark:border-slate-800">
               {stats.dayCounts.map((day) => {
-                const heightPct = Math.max(Math.round((day.count / maxDayCount) * 100), 8);
+                const heightPct = day.count > 0 ? Math.max(Math.round((day.count / maxDayCount) * 100), 12) : 4;
                 return (
                   <div key={day.dateString} className="flex-1 flex flex-col items-center h-full justify-end group">
-                    <div className="text-[11px] font-bold text-slate-800 opacity-0 group-hover:opacity-100 transition-opacity mb-1 tabular-nums">
+                    <div className="text-[11px] font-bold text-slate-800 dark:text-slate-200 opacity-0 group-hover:opacity-100 transition-opacity mb-1 tabular-nums">
                       {day.count}
                     </div>
                     <div
                       style={{ height: `${heightPct}%` }}
                       className={`w-full max-w-[36px] rounded-t-lg transition-all duration-300 flex items-center justify-center ${
                         day.isToday
-                          ? 'bg-indigo-600 shadow-sm'
+                          ? 'bg-blue-600 shadow-sm'
                           : day.count > 0
-                          ? 'bg-slate-700 hover:bg-slate-900'
-                          : 'bg-slate-200'
+                          ? 'bg-slate-800 dark:bg-blue-800 hover:bg-slate-700 dark:hover:bg-blue-700'
+                          : 'bg-slate-200 dark:bg-slate-800'
                       }`}
-                      title={`${day.fullName} (${day.dateString}): ${day.count} asistentes`}
+                      title={`${day.fullName} (${day.dateString}): ${day.count} asistentes (${day.visitorsOnDay} visitas)`}
                     >
                       {day.count > 0 && (
                         <span className="text-[10px] font-bold text-white tabular-nums hidden sm:inline">
@@ -334,10 +290,10 @@ export const WeeklyStatsView: React.FC<WeeklyStatsViewProps> = ({
                       )}
                     </div>
                     <div className="mt-2 text-center">
-                      <span className={`block text-xs font-bold ${day.isToday ? 'text-indigo-600' : 'text-slate-700'}`}>
+                      <span className={`block text-xs font-bold ${day.isToday ? 'text-blue-600 dark:text-blue-400 font-extrabold' : 'text-slate-700 dark:text-slate-300'}`}>
                         {day.label}
                       </span>
-                      <span className="text-[10px] text-slate-400 block -mt-0.5">
+                      <span className="text-[10px] text-slate-400 dark:text-slate-500 block -mt-0.5">
                         {day.fullName.slice(0, 3)}
                       </span>
                     </div>
@@ -345,70 +301,138 @@ export const WeeklyStatsView: React.FC<WeeklyStatsViewProps> = ({
                 );
               })}
             </div>
+
+            <div className="mt-4 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+              <span>Muestra la concurrencia real registrada día a día</span>
+              <span className="font-semibold text-blue-600 dark:text-blue-400">Total: {stats.totalMarksInWeek} asistencias</span>
+            </div>
           </div>
-          <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
-            <span>Días con cultos y conferencias presentan el mayor flujo de visitas</span>
-            <span className="font-semibold text-indigo-700">L M Mi J V S D</span>
+        </div>
+
+        {/* Real Conferences & Events Attendance */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden flex flex-col justify-between">
+          <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
+            <div>
+              <h3 className="text-sm font-bold tracking-tight text-white">Asistencia en Conferencias y Cultos</h3>
+              <p className="text-xs text-slate-300">Total y proporción de visitas por evento registrado</p>
+            </div>
+            <span className="text-xs font-semibold text-slate-300 font-mono">
+              {stats.eventStats.length} eventos
+            </span>
+          </div>
+
+          <div className="p-6 flex-1 flex flex-col justify-between">
+            {stats.eventStats.length === 0 ? (
+              <div className="h-56 flex flex-col items-center justify-center text-center p-4">
+                <CalendarCheck2 className="w-8 h-8 text-slate-300 dark:text-slate-600 mb-2" />
+                <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">No hay conferencias registradas todavía</p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  Crea una conferencia o culto en el submenú "Conferencias" para ver sus métricas aquí.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-56 overflow-y-auto pr-1">
+                {stats.eventStats.map((evt) => {
+                  const pct = Math.round((evt.total / maxEventCount) * 100);
+                  return (
+                    <div key={evt.id} className="p-3 bg-slate-50 dark:bg-slate-950/70 rounded-xl border border-slate-200 dark:border-slate-800">
+                      <div className="flex items-center justify-between text-xs font-bold text-slate-900 dark:text-white mb-1">
+                        <span className="truncate max-w-[200px]">{evt.title}</span>
+                        <span className="text-blue-600 dark:text-blue-400 font-mono">{evt.total} asistieron</span>
+                      </div>
+                      <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden flex">
+                        <div
+                          style={{ width: `${evt.total > 0 ? (evt.visitors / evt.total) * 100 : 0}%` }}
+                          className="bg-emerald-500 h-full"
+                          title={`Visitas: ${evt.visitors}`}
+                        />
+                        <div
+                          style={{ width: `${evt.total > 0 ? (evt.members / evt.total) * 100 : 0}%` }}
+                          className="bg-blue-600 h-full"
+                          title={`Miembros: ${evt.members}`}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{evt.visitors} visitas</span>
+                        <span>Fecha: {evt.date}</span>
+                        <span className="text-blue-600 dark:text-blue-400 font-semibold">{evt.members} miembros</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-emerald-500 rounded-xs"></span> Verde: Visitas</span>
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-blue-600 rounded-xs"></span> Azul: Miembros</span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Zone / Geographic Analytics Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+      {/* Zone / Geographic Analytics Table framed with Navy Header */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
+        <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
           <div className="flex items-center gap-2">
-            <MapPin className="w-4 h-4 text-indigo-400" />
-            <h3 className="text-sm font-bold">Crecimiento y Alcance por Zonas de la Ciudad</h3>
+            <MapPin className="w-4 h-4 text-blue-400" />
+            <h3 className="text-sm font-bold">Distribución Real por Zonas de la Iglesia</h3>
           </div>
           <span className="text-xs text-slate-300 font-mono">
-            {stats.zoneStats.length} Zonas registradas
+            {stats.zoneStats.length} Zonas con asistentes
           </span>
         </div>
 
         <div className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {stats.zoneStats.map((z, idx) => {
-              const pct = Math.round((z.total / stats.totalRegistered) * 100);
-              return (
-                <div key={z.zone} className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 text-xs font-bold flex items-center justify-center">
-                        {idx + 1}
+          {stats.zoneStats.length === 0 ? (
+            <div className="text-center py-6 text-xs text-slate-500 dark:text-slate-400">
+              No hay personas registradas por zona aún. Al registrar personas en "Asistencia y Visitas", aparecerán aquí en tiempo real.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {stats.zoneStats.map((z, idx) => {
+                const pct = stats.totalRegistered > 0 ? Math.round((z.total / stats.totalRegistered) * 100) : 0;
+                return (
+                  <div key={z.zone} className="p-4 bg-slate-50 dark:bg-slate-950/70 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center justify-center">
+                          {idx + 1}
+                        </span>
+                        <span className="text-sm font-bold text-slate-900 dark:text-white">{z.zone}</span>
+                      </div>
+                      <div className="text-xs text-slate-600 dark:text-slate-400">
+                        <span className="font-bold text-slate-900 dark:text-white tabular-nums">{z.total}</span> personas ({pct}%)
+                      </div>
+                    </div>
+
+                    {/* Progress bar */}
+                    <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden flex">
+                      <div
+                        style={{ width: `${z.total > 0 ? (z.visitors / z.total) * 100 : 0}%` }}
+                        className="bg-emerald-500 h-full"
+                        title={`Visitas: ${z.visitors}`}
+                      />
+                      <div
+                        style={{ width: `${z.total > 0 ? ((z.total - z.visitors) / z.total) * 100 : 0}%` }}
+                        className="bg-blue-600 h-full"
+                        title={`Miembros / Recurrentes: ${z.total - z.visitors}`}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-emerald-700 dark:text-emerald-400 font-medium">
+                        {z.visitors} visitas
                       </span>
-                      <span className="text-sm font-bold text-slate-900">{z.zone}</span>
+                      <span className="text-blue-700 dark:text-blue-400 font-medium">
+                        {z.total - z.visitors} miembros y recurrentes
+                      </span>
                     </div>
-                    <div className="text-xs text-slate-600">
-                      <span className="font-bold text-slate-900 tabular-nums">{z.total}</span> personas ({pct}%)
-                    </div>
                   </div>
-
-                  {/* Progress bar */}
-                  <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden flex">
-                    <div
-                      style={{ width: `${(z.visitors / z.total) * 100}%` }}
-                      className="bg-emerald-500 h-full"
-                      title={`Visitas: ${z.visitors}`}
-                    />
-                    <div
-                      style={{ width: `${((z.total - z.visitors) / z.total) * 100}%` }}
-                      className="bg-indigo-600 h-full"
-                      title={`Miembros / Recurrentes: ${z.total - z.visitors}`}
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between text-[11px] text-slate-500">
-                    <span className="text-emerald-700 font-medium">
-                      {z.visitors} nuevas visitas
-                    </span>
-                    <span className="text-indigo-700 font-medium">
-                      {z.total - z.visitors} miembros/fieles
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>

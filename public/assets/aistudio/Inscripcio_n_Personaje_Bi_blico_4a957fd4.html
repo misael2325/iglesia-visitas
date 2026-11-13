@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Inscripción – Imita tu Personaje Bíblico</title>
+<style>
+:root{--bg:#faf6ee;--card:#fff;--ink:#2b2118;--mute:#6f6357;--accent:#8a5a2b;--line:#e3d8c6;--ok:#2e7d4f;--err:#b3261e;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1c1712;--card:#27201a;--ink:#f1e8da;--mute:#b5a893;--accent:#d9a46a;--line:#3d3329;--ok:#6cc18d;--err:#f2958d;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#1c1712;--card:#27201a;--ink:#f1e8da;--mute:#b5a893;--accent:#d9a46a;--line:#3d3329;--ok:#6cc18d;--err:#f2958d;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Georgia,'Times New Roman',serif}
+main{max-width:640px;margin:0 auto;padding:20px 16px 48px}
+header{text-align:center;padding:24px 8px}
+h1{font-size:1.7rem;margin:.2em 0;color:var(--accent)}
+header p{margin:.3em 0;color:var(--mute)}
+.date{display:inline-block;margin-top:8px;padding:4px 14px;border:1px solid var(--accent);border-radius:99px;color:var(--accent);font-weight:bold}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin:16px 0}
+h2{font-size:1.1rem;margin:0 0 12px;color:var(--accent)}
+label.q{display:block;font-weight:bold;margin:14px 0 6px}
+label.q small{font-weight:normal;color:var(--mute)}
+input[type=text],textarea{width:100%;box-sizing:border-box;padding:10px;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px}
+input:focus,textarea:focus{outline:2px solid var(--accent)}
+textarea{min-height:96px;resize:vertical}
+.opts{display:flex;gap:18px}
+.opts label{display:flex;gap:6px;align-items:center}
+button{font:inherit;font-weight:bold;padding:12px 24px;border:0;border-radius:8px;background:var(--accent);color:var(--bg);cursor:pointer;width:100%}
+button.sec{background:transparent;color:var(--accent);border:1px solid var(--accent);margin-top:10px}
+#msg{margin-top:12px;font-weight:bold}
+.ok{color:var(--ok)}.err{color:var(--err)}
+.req{color:var(--err)}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+td,th{border-bottom:1px solid var(--line);padding:6px;text-align:left;vertical-align:top}
+.wrap{overflow-x:auto}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div style="font-size:2rem">📖</div>
+  <h1>Inscripción – Imita tu Personaje Bíblico</h1>
+  <p>¡Prepárate para dar vida a la historia sagrada!</p>
+  <span class="date">Sábado 28 de noviembre de 2026</span>
+</header>
+
+<form id="f" onsubmit="return false">
+<section>
+  <h2>Sección 1: Información General</h2>
+  <label class="q" for="nombre">Nombre y apellido del participante <span class="req">*</span></label>
+  <input type="text" id="nombre" required>
+  <label class="q" for="edad">Edad o clase/categoría <small>(si aplica)</small></label>
+  <input type="text" id="edad">
+  <label class="q" for="contacto">Teléfono o correo de contacto <small>(participante o tutor)</small> <span class="req">*</span></label>
+  <input type="text" id="contacto" required>
+</section>
+
+<section>
+  <h2>Sección 2: Sobre la Interpretación</h2>
+  <label class="q" for="personaje">¿Cuál personaje bíblico vas a imitar? <span class="req">*</span></label>
+  <input type="text" id="personaje" required>
+  <label class="q" for="escena">Breve descripción de la escena o pasaje bíblico que representarás <span class="req">*</span></label>
+  <textarea id="escena" required></textarea>
+</section>
+
+<section>
+  <h2>Sección 3: Requerimientos Técnicos y Logísticos</h2>
+  <label class="q" for="utileria">¿Necesitarás algún elemento de apoyo o utilería especial? <small>(Ej. mesa, silla, etc.)</small></label>
+  <input type="text" id="utileria">
+  <div class="q" style="font-weight:bold;margin:14px 0 6px">¿Requieres reproducir algún audio o pista musical durante tu presentación? <span class="req">*</span></div>
+  <div class="opts">
+    <label><input type="radio" name="audio" value="Sí"> Sí</label>
+    <label><input type="radio" name="audio" value="No"> No</label>
+  </div>
+  <label class="q" for="ensenanza">¿Cuál es la enseñanza principal que deseas transmitir con tu personaje? <span class="req">*</span></label>
+  <textarea id="ensenanza" required></textarea>
+</section>
+
+<button id="send" type="button">Enviar inscripción</button>
+<div id="msg" role="status"></div>
+</form>
+
+<section id="admin" hidden>
+  <h2>Inscripciones recibidas (solo organizador)</h2>
+  <div class="wrap" id="lista"></div>
+  <button class="sec" id="copyAll" type="button">Copiar todas</button>
+</section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const FIELDS = [["nombre","Nombre"],["edad","Edad/Categoría"],["contacto","Contacto"],["personaje","Personaje"],["escena","Escena"],["utileria","Utilería"],["audio","Audio"],["ensenanza","Enseñanza"]];
+let db = null, user = null;
+
+function datos(){
+  const d = {};
+  FIELDS.forEach(([k]) => { d[k] = k === "audio" ? (document.querySelector('input[name=audio]:checked')?.value || "") : $(k).value.trim(); });
+  return d;
+}
+function texto(d){ return FIELDS.map(([k,l]) => l + ": " + (d[k]||"")).join("\n"); }
+function msg(t, ok){ $("msg").textContent = t; $("msg").className = ok ? "ok" : "err"; }
+
+async function copiar(t){
+  try { await navigator.clipboard.writeText(t); return true; } catch(e){ return false; }
+}
+
+$("send").onclick = async () => {
+  const d = datos();
+  if(!d.nombre || !d.contacto || !d.personaje || !d.escena || !d.audio || !d.ensenanza){
+    msg("Por favor completa los campos obligatorios (*).", false); return;
+  }
+  d.fecha = new Date().toISOString();
+  $("send").disabled = true;
+  try {
+    if(!db) throw new Error("sin-db");
+    const id = "i" + Date.now() + Math.random().toString(36).slice(2,6);
+    await db.collection("inscripciones").doc(id).set(d);
+    msg("¡Inscripción enviada! Gracias, te esperamos el 28 de noviembre.", true);
+    $("f").reset();
+  } catch(e){
+    const ok = await copiar(texto(d));
+    msg(ok ? "No se pudo enviar automáticamente. Copiamos tu inscripción: pégala y envíala al organizador." : "No se pudo enviar. Inténtalo de nuevo.", false);
+  }
+  $("send").disabled = false;
+};
+
+async function cargarAdmin(){
+  try {
+    const snap = await db.collection("inscripciones").get();
+    const rows = [];
+    (snap.docs || []).forEach(x => rows.push(typeof x.data === "function" ? x.data() : x));
+    rows.sort((a,b) => (a.fecha||"").localeCompare(b.fecha||""));
+    const t = document.createElement("table");
+    t.innerHTML = "<tr><th>Participante</th><th>Personaje</th><th>Contacto</th><th>Audio</th></tr>";
+    rows.forEach(r => {
+      const tr = t.insertRow();
+      [r.nombre + (r.edad ? " (" + r.edad + ")" : ""), r.personaje, r.contacto, r.audio].forEach(v => { tr.insertCell().textContent = v || ""; });
+    });
+    $("lista").replaceChildren(t);
+    $("copyAll").onclick = () => copiar(rows.map(texto).join("\n\n---\n\n"));
+    $("admin").hidden = false;
+  } catch(e){}
+}
+
+(async () => {
+  try {
+    db = await claude.use("db");
+    user = await claude.use("user");
+    if(db && user && user.canEdit()) cargarAdmin();
+  } catch(e){}
+})();
+</script>
+</body>
+</html>

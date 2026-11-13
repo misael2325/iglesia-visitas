@@ -30,7 +30,7 @@ interface AttendeeListProps {
   onToggleEventAttendance: (attendeeId: string, eventId: string) => void;
   onEditAttendee: (attendee: Attendee) => void;
   onOpenRegister: () => void;
-  onOpenWhatsApp: (attendee: Attendee) => void;
+  onOpenWhatsApp: (attendee: Attendee, template?: 'reminder' | 'welcome' | 'prayer') => void;
   activeEvent: ChurchEvent | null;
 }
 
@@ -135,7 +135,7 @@ export const AttendeeList: React.FC<AttendeeListProps> = ({
   return (
     <div className="space-y-6">
       {/* Search and Filter Control Bar */}
-      <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-xs">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           {/* Search Input with Search Button */}
           <form onSubmit={handleSearchSubmit} className="flex-1 flex items-center gap-2">
@@ -149,14 +149,14 @@ export const AttendeeList: React.FC<AttendeeListProps> = ({
                   setActiveSearch(e.target.value.trim().toLowerCase());
                 }}
                 placeholder="Buscar por nombre, apellido, celular o zona..."
-                className="w-full pl-10 pr-10 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-slate-900 placeholder:text-slate-400"
+                className="w-full pl-10 pr-10 py-2.5 text-sm bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:bg-white dark:focus:bg-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
               />
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
               {searchTerm && (
                 <button
                   type="button"
                   onClick={handleClearSearch}
-                  className="absolute right-3 top-2.5 p-1 text-slate-400 hover:text-slate-600 rounded-md"
+                  className="absolute right-3 top-2.5 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-md"
                   title="Limpiar búsqueda"
                 >
                   <X className="w-4 h-4" />
@@ -165,7 +165,7 @@ export const AttendeeList: React.FC<AttendeeListProps> = ({
             </div>
             <button
               type="submit"
-              className="px-4 py-2.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl transition-colors shrink-0 shadow-xs flex items-center gap-1.5"
+              className="px-4 py-2.5 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 active:bg-slate-950 dark:bg-blue-600 dark:hover:bg-blue-500 rounded-xl transition-colors shrink-0 shadow-xs flex items-center gap-1.5"
             >
               <Search className="w-3.5 h-3.5" />
               <span>Buscar</span>
@@ -180,7 +180,7 @@ export const AttendeeList: React.FC<AttendeeListProps> = ({
               <select
                 value={selectedType}
                 onChange={(e) => setSelectedType(e.target.value)}
-                className="py-2 px-3 text-xs font-medium bg-slate-50 border border-slate-300 rounded-xl text-slate-700 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                className="py-2 px-3 text-xs font-medium bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
               >
                 <option value="all">Todos los registros ({attendees.length})</option>
                 <option value="visitante">Solo Visitas Nuevas</option>
@@ -195,7 +195,7 @@ export const AttendeeList: React.FC<AttendeeListProps> = ({
               <select
                 value={selectedZone}
                 onChange={(e) => setSelectedZone(e.target.value)}
-                className="py-2 px-3 text-xs font-medium bg-slate-50 border border-slate-300 rounded-xl text-slate-700 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                className="py-2 px-3 text-xs font-medium bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
               >
                 <option value="all">Todas las Zonas</option>
                 {availableZones.map((z) => (
@@ -210,7 +210,7 @@ export const AttendeeList: React.FC<AttendeeListProps> = ({
             <button
               type="button"
               onClick={onOpenRegister}
-              className="py-2 px-3.5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 active:bg-slate-950 rounded-xl transition-colors shadow-xs flex items-center gap-1.5 ml-auto sm:ml-0"
+              className="py-2 px-3.5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 active:bg-slate-950 dark:bg-blue-600 dark:hover:bg-blue-500 rounded-xl transition-colors shadow-xs flex items-center gap-1.5 ml-auto sm:ml-0"
             >
               <UserPlus className="w-3.5 h-3.5" />
               <span>+ Registrar Visita</span>
@@ -219,14 +219,14 @@ export const AttendeeList: React.FC<AttendeeListProps> = ({
         </div>
 
         {/* Weekly Navigator Bar */}
-        <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Control Semanal:</span>
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Control Semanal:</span>
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
               <button
                 type="button"
                 onClick={onPrevWeek}
-                className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-white rounded-lg transition-colors"
+                className="p-1.5 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-700 rounded-lg transition-colors"
                 title="Semana anterior"
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -236,8 +236,8 @@ export const AttendeeList: React.FC<AttendeeListProps> = ({
                 onClick={onCurrentWeek}
                 className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors ${
                   weekOffset === 0
-                    ? 'bg-white text-indigo-700 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 Semana Actual
@@ -245,50 +245,50 @@ export const AttendeeList: React.FC<AttendeeListProps> = ({
               <button
                 type="button"
                 onClick={onNextWeek}
-                className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-white rounded-lg transition-colors"
+                className="p-1.5 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-700 rounded-lg transition-colors"
                 title="Semana siguiente"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
-            <span className="text-xs font-medium text-slate-600 ml-1">
-              Del <span className="font-semibold text-slate-900">{startDateLabel}</span> al <span className="font-semibold text-slate-900">{endDateLabel}</span>
+            <span className="text-xs font-medium text-slate-600 dark:text-slate-300 ml-1">
+              Del <span className="font-semibold text-slate-900 dark:text-white">{startDateLabel}</span> al <span className="font-semibold text-slate-900 dark:text-white">{endDateLabel}</span>
             </span>
           </div>
 
           {/* Quick Metrics Bar */}
-          <div className="flex items-center gap-4 text-xs">
-            <div className="text-slate-600">
-              Registrados: <span className="font-bold text-slate-900 tabular-nums">{filteredAttendees.length}</span>
+          <div className="flex items-center gap-4 text-xs font-medium">
+            <div className="text-slate-600 dark:text-slate-400">
+              Registrados: <span className="font-bold text-slate-900 dark:text-white tabular-nums">{filteredAttendees.length}</span>
             </div>
-            <div className="text-slate-600">
-              Asistieron en la semana: <span className="font-bold text-emerald-600 tabular-nums">{weekStats.attendeesThisWeekCount}</span>
+            <div className="text-slate-600 dark:text-slate-400">
+              Asistieron en la semana: <span className="font-bold text-slate-900 dark:text-white tabular-nums">{weekStats.attendeesThisWeekCount}</span>
             </div>
-            <div className="text-slate-600">
-              Hoy: <span className="font-bold text-indigo-600 tabular-nums">{weekStats.attendeesTodayCount}</span>
+            <div className="text-slate-600 dark:text-slate-400">
+              Hoy: <span className="font-bold text-blue-600 dark:text-blue-400 tabular-nums">{weekStats.attendeesTodayCount}</span>
             </div>
           </div>
         </div>
       </div>
 
       {/* Main Table / Card View of Attendees */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
         {/* Table Header */}
         <div className="px-6 py-4 bg-slate-900 text-white flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <CalendarCheck className="w-5 h-5 text-indigo-400" />
+            <CalendarCheck className="w-5 h-5 text-blue-400" />
             <div>
               <h3 className="text-sm font-bold tracking-tight text-white">Registro de Asistencia y Visitas</h3>
               <p className="text-xs text-slate-300">
-                Toca las iniciales de los días (<span className="text-indigo-300 font-semibold">L, M, Mi, J, V, S, D</span>) para tachar la asistencia en tiempo real
+                Toca las iniciales de los días (<span className="text-blue-300 font-semibold">L, M, Mi, J, V, S, D</span>) para tachar la asistencia en tiempo real
               </p>
             </div>
           </div>
 
           {/* Active Event Indicator */}
           {activeEvent && (
-            <div className="flex items-center gap-2 bg-slate-800/90 border border-slate-700 px-3 py-1.5 rounded-xl text-xs">
-              <Calendar className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+            <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-xl text-xs">
+              <Calendar className="w-3.5 h-3.5 text-blue-400 shrink-0" />
               <span className="text-slate-300 truncate max-w-[220px]">
                 Evento activo: <strong className="text-white">{activeEvent.title}</strong>
               </span>
@@ -297,11 +297,11 @@ export const AttendeeList: React.FC<AttendeeListProps> = ({
         </div>
 
         {/* Days Header Guide on Desktop */}
-        <div className="hidden lg:flex items-center justify-between px-6 py-2.5 bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+        <div className="hidden lg:flex items-center justify-between px-6 py-2.5 bg-slate-100 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
           <div className="w-1/3">Nombre y Contacto</div>
           <div className="w-1/4">Zona / Lugar y Tipo</div>
           <div className="w-1/3 text-center">
-            Días de la Semana (<span className="text-indigo-600">Lunes a Domingo</span>)
+            Días de la Semana (<span className="text-slate-900 dark:text-white font-extrabold">Lunes a Domingo</span>)
           </div>
           <div className="w-24 text-right">Acciones</div>
         </div>
@@ -309,24 +309,24 @@ export const AttendeeList: React.FC<AttendeeListProps> = ({
         {/* Attendee Rows */}
         {filteredAttendees.length === 0 ? (
           <div className="p-12 text-center space-y-3">
-            <div className="w-12 h-12 mx-auto rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+            <div className="w-12 h-12 mx-auto rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400">
               <Search className="w-6 h-6" />
             </div>
-            <p className="text-sm font-semibold text-slate-800">No se encontraron personas registradas</p>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto">
+            <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">No se encontraron personas registradas</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
               Prueba cambiando los términos de búsqueda o registra una nueva visita usando el botón superior.
             </p>
             <button
               type="button"
               onClick={onOpenRegister}
-              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors"
             >
               <UserPlus className="w-4 h-4" />
               Registrar Primera Visita
             </button>
           </div>
         ) : (
-          <div className="divide-y divide-slate-100">
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
             {filteredAttendees.map((person) => {
               // Calculate attended days count for this week
               const attendedThisWeek = weekDays.filter(
@@ -339,42 +339,42 @@ export const AttendeeList: React.FC<AttendeeListProps> = ({
               return (
                 <div
                   key={person.id}
-                  className="px-4 sm:px-6 py-3.5 hover:bg-slate-50/80 transition-colors flex flex-col lg:flex-row lg:items-center justify-between gap-3"
+                  className="px-4 sm:px-6 py-3.5 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors flex flex-col lg:flex-row lg:items-center justify-between gap-3"
                 >
                   {/* Left Column: Name, Phone, and notes preview */}
                   <div className="lg:w-1/3 space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-slate-900 hover:text-indigo-600 cursor-pointer" onClick={() => onEditAttendee(person)}>
+                      <span className="text-sm font-bold text-slate-900 dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer transition-colors" onClick={() => onEditAttendee(person)}>
                         {person.firstName} {person.lastName}
                       </span>
                       {person.type === 'visitante' && (
-                        <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                        <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/80 px-2 py-0.5 rounded-md">
                           Visita 1ra Vez
                         </span>
                       )}
                       {person.type === 'recurrente' && (
-                        <span className="text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md">
+                        <span className="text-xs font-medium text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800/80 px-2 py-0.5 rounded-md">
                           Amigo Recurrente
                         </span>
                       )}
                       {person.type === 'miembro' && (
-                        <span className="text-xs font-medium text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
+                        <span className="text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-md">
                           Miembro
                         </span>
                       )}
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
                       <a
                         href={`tel:${getCleanPhoneNumber(person.phone)}`}
-                        className="flex items-center gap-1 text-slate-600 hover:text-indigo-600 font-mono transition-colors"
+                        className="flex items-center gap-1 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 font-mono transition-colors"
                         title="Llamar por teléfono"
                       >
                         <Phone className="w-3 h-3 text-slate-400" />
                         {person.phone}
                       </a>
-                      <span className="text-slate-300">·</span>
-                      <span className="flex items-center gap-1 text-slate-600">
+                      <span className="text-slate-300 dark:text-slate-700">·</span>
+                      <span className="flex items-center gap-1 text-slate-600 dark:text-slate-300">
                         <MapPin className="w-3 h-3 text-slate-400" />
                         {person.zone}
                       </span>
@@ -382,14 +382,14 @@ export const AttendeeList: React.FC<AttendeeListProps> = ({
 
                     {/* Prayer request or notes if present */}
                     {(person.prayerRequest || person.notes) && (
-                      <p className="text-xs text-slate-500 italic truncate max-w-sm">
+                      <p className="text-xs text-slate-500 dark:text-slate-400 italic truncate max-w-sm">
                         {person.prayerRequest ? `Oración: ${person.prayerRequest}` : person.notes}
                       </p>
                     )}
                   </div>
 
                   {/* Middle: Zone & Active Event quick-badge */}
-                  <div className="lg:w-1/4 flex flex-col gap-1 text-xs text-slate-600">
+                  <div className="lg:w-1/4 flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-300">
                     <div className="flex items-center gap-2">
                       {activeEvent && (
                         <button
@@ -397,8 +397,8 @@ export const AttendeeList: React.FC<AttendeeListProps> = ({
                           onClick={() => onToggleEventAttendance(person.id, activeEvent.id)}
                           className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors border ${
                             isEventAttended
-                              ? 'bg-indigo-600 text-white border-indigo-700'
-                              : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                              ? 'bg-blue-600 text-white border-blue-700 dark:bg-blue-600 dark:border-blue-500'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
                           }`}
                           title="Marcar asistencia al evento activo"
                         >
@@ -417,26 +417,35 @@ export const AttendeeList: React.FC<AttendeeListProps> = ({
                         attendance={person.attendance}
                         onToggleDay={(dateString) => onToggleDayAttendance(person.id, dateString)}
                       />
-                      <span className="text-xs text-slate-500 tabular-nums">
+                      <span className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
                         {attendedThisWeek} de 7 días asistidos
                       </span>
                     </div>
                   </div>
 
-                  {/* Far Right: Actions (WhatsApp, Edit) */}
-                  <div className="lg:w-24 flex items-center justify-end gap-1.5 shrink-0">
+                  {/* Far Right: Actions (Conference WhatsApp Reminder, General WhatsApp, Edit) */}
+                  <div className="lg:w-auto flex items-center justify-end gap-1.5 shrink-0">
                     <button
                       type="button"
-                      onClick={() => onOpenWhatsApp(person)}
-                      className="p-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition-colors"
-                      title="Enviar mensaje de WhatsApp"
+                      onClick={() => onOpenWhatsApp(person, 'reminder')}
+                      className="px-2.5 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800 rounded-xl transition-colors flex items-center gap-1.5 shadow-2xs"
+                      title="Enviar recordatorio de la conferencia y motivar a no faltar hoy"
+                    >
+                      <Calendar className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span className="hidden sm:inline">Recordar Hoy</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onOpenWhatsApp(person, 'welcome')}
+                      className="p-2 text-slate-500 dark:text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 rounded-xl transition-colors"
+                      title="Enviar otro mensaje de WhatsApp (Bienvenida u Oración)"
                     >
                       <MessageSquare className="w-4 h-4" />
                     </button>
                     <button
                       type="button"
                       onClick={() => onEditAttendee(person)}
-                      className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors"
+                      className="p-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
                       title="Editar datos del registrado"
                     >
                       <Edit3 className="w-4 h-4" />
