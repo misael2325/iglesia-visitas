@@ -15,7 +15,13 @@ import {
   Download,
   Church
 } from 'lucide-react';
-import { BiblicalCharacterRegistration, ContestCustomConfig, CHURCH_OPTIONS } from '../types';
+import {
+  BiblicalCharacterRegistration,
+  ContestCustomConfig,
+  CHURCH_OPTIONS,
+  classifyCharacterByAge,
+  getCharacterCategoryLabel,
+} from '../types';
 import { downloadPhotoFile } from '../utils/photoStorage';
 import { createPublicRegistrationShareUrl, fetchBiblicalCharactersOnline } from '../services/supabaseClient';
 
@@ -75,8 +81,8 @@ export const PublicCharacterRegistrationView: React.FC<PublicCharacterRegistrati
     e.preventDefault();
     setErrorMsg('');
 
-    if (!nombre.trim() || !contacto.trim() || !personaje.trim() || !audio || !iglesia.trim()) {
-      setErrorMsg('Por favor completa todos los campos requeridos (*), incluyendo la iglesia a la que perteneces.');
+    if (!nombre.trim() || !edad.trim() || !contacto.trim() || !personaje.trim() || !audio || !iglesia.trim()) {
+      setErrorMsg('Por favor completa todos los campos requeridos (*), incluyendo la edad y la iglesia a la que perteneces.');
       return;
     }
 
@@ -121,12 +127,13 @@ export const PublicCharacterRegistrationView: React.FC<PublicCharacterRegistrati
 
   const formatRegistrationSummary = (reg: BiblicalCharacterRegistration): string => {
     const shareLink = createPublicRegistrationShareUrl();
+    const catLabel = getCharacterCategoryLabel(classifyCharacterByAge(reg.edad));
     return `📖 *INSCRIPCIÓN - ${eventTitle.toUpperCase()}*
 📅 Evento: ${eventDateText}
 
 👤 *Nombre y Apellido:* ${reg.nombre}
 ⛪ *Iglesia:* ${reg.iglesia || 'No especificada'}
-🎂 *Edad:* ${reg.edad || 'No especificada'}
+🎂 *Edad:* ${reg.edad || 'No especificada'} (${catLabel})
 📱 *Contacto:* ${reg.contacto}
 👑 *Personaje Bíblico:* ${reg.personaje}
 🎵 *Requiere Audio:* ${reg.audio}
@@ -332,9 +339,14 @@ ${shareLink}`;
                 </span>
               </div>
               <div className="flex justify-between border-b border-[#e3d8c6] dark:border-[#3d3329] pb-2">
-                <span className="text-[#6f6357] dark:text-[#b5a893]">Edad:</span>
-                <span className="font-bold text-[#2b2118] dark:text-[#f1e8da]">
-                  {submittedReg.edad || 'No especificada'}
+                <span className="text-[#6f6357] dark:text-[#b5a893]">Edad / Categoría:</span>
+                <span className="font-bold text-[#2b2118] dark:text-[#f1e8da] flex items-center gap-1.5">
+                  <span>{submittedReg.edad || 'No especificada'}</span>
+                  {classifyCharacterByAge(submittedReg.edad) !== 'sin_clasificar' && (
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300">
+                      {getCharacterCategoryLabel(classifyCharacterByAge(submittedReg.edad))}
+                    </span>
+                  )}
                 </span>
               </div>
               <div className="flex justify-between border-b border-[#e3d8c6] dark:border-[#3d3329] pb-2">
@@ -423,15 +435,39 @@ ${shareLink}`;
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs sm:text-sm font-bold mb-1.5 text-[#2b2118] dark:text-[#f1e8da]">
-                    Edad
+                    Edad <span className="text-rose-500 font-bold">*</span>
                   </label>
                   <input
                     type="text"
-                    placeholder="Ej. 14 años / Jóvenes"
+                    required
+                    inputMode="numeric"
+                    placeholder="Ej. 14 años"
                     value={edad}
                     onChange={(e) => setEdad(e.target.value)}
                     className="w-full px-3.5 py-3 rounded-xl border border-[#e3d8c6] dark:border-[#3d3329] bg-[#faf6ee] dark:bg-[#1c1712] text-[#2b2118] dark:text-[#f1e8da] focus:outline-none focus:ring-2 text-sm font-sans"
                   />
+                  {(() => {
+                    const cat = classifyCharacterByAge(edad);
+                    if (cat === 'ninos') {
+                      return (
+                        <p className="mt-1 text-[11px] font-sans font-bold text-sky-700 dark:text-sky-400">
+                          Categoría: Niños (hasta 17 años)
+                        </p>
+                      );
+                    }
+                    if (cat === 'adultos') {
+                      return (
+                        <p className="mt-1 text-[11px] font-sans font-bold text-indigo-700 dark:text-indigo-400">
+                          Categoría: Adultos (18 años en adelante)
+                        </p>
+                      );
+                    }
+                    return (
+                      <p className="mt-1 text-[11px] font-sans text-[#6f6357] dark:text-[#b5a893]">
+                        Niños: hasta 17 años · Adultos: 18+ años
+                      </p>
+                    );
+                  })()}
                 </div>
 
                 <div>

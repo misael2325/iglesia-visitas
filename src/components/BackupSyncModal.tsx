@@ -29,7 +29,8 @@ import {
   CamporeeShirtPayment,
   ClubEnrollment,
   BiblicalCharacterRegistration,
-  ContestCustomConfig
+  ContestCustomConfig,
+  YouthGame
 } from '../types';
 import { 
   getSupabaseConfig, 
@@ -64,6 +65,7 @@ interface BackupSyncModalProps {
   clubEnrollments?: ClubEnrollment[];
   biblicalCharacters?: BiblicalCharacterRegistration[];
   contestConfig?: ContestCustomConfig;
+  youthGames?: YouthGame[];
   onRestoreData: (payload: ChurchDataPayload, mode: 'replace' | 'merge') => void;
   onNotify: (msg: string) => void;
   initialTab?: 'tables' | 'supabase' | 'json';
@@ -85,6 +87,7 @@ export const BackupSyncModal: React.FC<BackupSyncModalProps> = ({
   clubEnrollments,
   biblicalCharacters,
   contestConfig,
+  youthGames,
   onRestoreData,
   onNotify,
   initialTab = 'tables',
@@ -156,6 +159,7 @@ export const BackupSyncModal: React.FC<BackupSyncModalProps> = ({
       clubEnrollments,
       biblicalCharacters,
       contestConfig,
+      youthGames,
     };
 
     const dateStr = new Date().toISOString().split('T')[0];
@@ -243,6 +247,7 @@ export const BackupSyncModal: React.FC<BackupSyncModalProps> = ({
       clubEnrollments,
       biblicalCharacters,
       contestConfig,
+      youthGames,
       deletedIds: getLocalDeletedIds(),
     };
     const res = await pushDataToSupabase(payload);
@@ -292,7 +297,7 @@ export const BackupSyncModal: React.FC<BackupSyncModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-extrabold text-white">Configuración del Sistema y Base de Datos</h2>
-              <p className="text-xs text-slate-300 font-medium">Verificación de tablas (11), código permanente Supabase en tiempo real y respaldos JSON</p>
+              <p className="text-xs text-slate-300 font-medium">Verificación de tablas ({REQUIRED_DATABASE_TABLES.length}), código permanente Supabase en tiempo real y respaldos JSON</p>
             </div>
           </div>
           <button

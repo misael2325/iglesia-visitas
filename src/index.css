@@ -56,6 +56,14 @@
   .print-only {
     display: block !important;
   }
+  .print-page-break {
+    break-before: page !important;
+    page-break-before: always !important;
+  }
+  .print-avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
   body {
     background: white !important;
     color: black !important;

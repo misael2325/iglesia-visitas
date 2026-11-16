@@ -27,7 +27,7 @@ import {
   ArrowDownToLine,
   Image as ImageIcon
 } from 'lucide-react';
-import { ChurchPhoto, PhotoAlbum, AppUser, isAdminRole } from '../types';
+import { ChurchPhoto, PhotoAlbum, AppUser, hasAnyUserRole } from '../types';
 import { 
   downloadPhotoFile, 
   optimizePhotoFile, 
@@ -79,7 +79,7 @@ export const PhotoGalleryManager: React.FC<PhotoGalleryManagerProps> = ({
   const [newAlbumName, setNewAlbumName] = useState<string>('');
   const [newAlbumDesc, setNewAlbumDesc] = useState<string>('');
 
-  const isAdmin = isAdminRole(currentUser.role) || currentUser.role === 'pastor' || currentUser.role === 'anciano';
+  const isAdmin = hasAnyUserRole(currentUser, ['administrador', 'admin', 'pastor', 'anciano']);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);

@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   UserPlus, 
-  Church, 
   LogOut, 
   LogIn, 
   ChevronDown,
@@ -14,9 +13,20 @@ import {
   Settings,
   Camera,
   BookOpen,
-  Download
+  Download,
+  Gamepad2
 } from 'lucide-react';
-import { AppUser, AppModule, getRoleDisplayName, isSecretariaRole, isDirectivaClubesRole } from '../types';
+import { 
+  AppUser, 
+  AppModule, 
+  canUserAccessConfig,
+  getAllowedModulesForUser, 
+  getRoleDisplayName, 
+  getUserRoles, 
+  getUserRolesDisplayName, 
+  hasAnyUserRole, 
+  isSecretariaRestrictedUser 
+} from '../types';
 
 export type NavTab = 'asistencia' | 'conferencias' | 'reportes' | 'estadisticas';
 
@@ -66,9 +76,20 @@ export const Header: React.FC<HeaderProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const isAdmin = currentUser?.role === 'administrador' || currentUser?.role === 'admin';
-  const isSecretaria = isSecretariaRole(currentUser?.role);
-  const isDirectivaClubes = isDirectivaClubesRole(currentUser?.role);
+  const isAdmin = hasAnyUserRole(currentUser, ['administrador', 'admin']);
+  const isSecretaria = isSecretariaRestrictedUser(currentUser);
+  const allowedModules = getAllowedModulesForUser(currentUser);
+  const hasMultipleModules = allowedModules.length > 1;
+  const canConfig = canUserAccessConfig(currentUser);
+  const defaultHomeModule: AppModule = hasMultipleModules ? 'portal' : (allowedModules[0] || 'portal');
+
+  const canSeeVisitas = allowedModules.includes('visitas');
+  const canSeeClubes = allowedModules.includes('clubes');
+  const canSeeFotos = allowedModules.includes('fotos');
+  const canSeePersonaje = allowedModules.includes('personaje_biblico');
+  const canSeeGames = allowedModules.includes('jovenes_games');
+
+  const userRoles = getUserRoles(currentUser);
 
   const handleSelectVisitas = () => {
     onChangeModule('visitas');
@@ -76,6 +97,19 @@ export const Header: React.FC<HeaderProps> = ({
       onChangeTab('asistencia');
     }
   };
+
+  // Compute mobile bottom tab columns dynamically
+  const mobileTabCount = (hasMultipleModules ? 1 : 0) + allowedModules.length;
+  const mobileGridClass =
+    mobileTabCount <= 2
+      ? 'grid-cols-2'
+      : mobileTabCount === 3
+      ? 'grid-cols-3'
+      : mobileTabCount === 4
+      ? 'grid-cols-4'
+      : mobileTabCount === 5
+      ? 'grid-cols-5'
+      : 'grid-cols-6';
 
   return (
     <>
@@ -85,15 +119,20 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center justify-between gap-2 sm:gap-3 h-14 sm:h-16">
             {/* Zone 1: Brand Wordmark & Desktop Module Switcher */}
             <div className="flex items-center gap-3 sm:gap-6 min-w-0 shrink-0">
-              {/* Wordmark (clickable to Portal or Clubes for Directiva de Clubes) */}
+              {/* Wordmark */}
               <button
                 type="button"
-                onClick={() => onChangeModule(isDirectivaClubes ? 'clubes' : 'portal')}
+                onClick={() => onChangeModule(defaultHomeModule)}
                 className="flex items-center gap-2 sm:gap-2.5 shrink-0 text-left hover:opacity-90 transition-opacity min-h-[40px]"
-                title={isDirectivaClubes ? "Panel de Clubes · Eclesia" : "Ir al Portal de Entrada Principal"}
+                title={hasMultipleModules ? 'Ir al Menú Principal' : 'Panel Principal · Eclesia'}
               >
-                <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-blue-400 shadow-xs shrink-0">
-                  <Church className="w-4 h-4 sm:w-5 sm:h-5 text-blue-300" />
+                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-black border border-slate-700 overflow-hidden flex items-center justify-center shadow-xs shrink-0">
+                  <img
+                    src="/assets/aistudio/a_clean_modern_app_icon_style_graphic_with_a_roun_45278ae7.png"
+                    alt="Eclesia"
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-contain scale-[1.06]"
+                  />
                 </div>
                 <div className="flex flex-col">
                   <span className="text-base sm:text-lg font-bold tracking-tight text-white leading-tight">
@@ -105,100 +144,119 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
               </button>
 
-              {/* Desktop / Tablet Primary Module Switcher (moved to fixed Bottom Tab Bar on mobile) */}
+              {/* Desktop / Tablet Primary Module Switcher */}
               <div className="hidden md:flex items-center bg-slate-800 border-2 border-slate-700 p-1 rounded-xl shadow-xs">
-                {!isDirectivaClubes && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => onChangeModule('portal')}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all whitespace-nowrap ${
-                        activeModule === 'portal'
-                          ? 'bg-blue-600 text-white shadow-md ring-1 ring-white/20'
-                          : 'text-slate-100 hover:text-white hover:bg-slate-700'
-                      }`}
-                      title="Portal Principal de Entrada"
-                    >
-                      <LayoutGrid className="w-3.5 h-3.5 text-blue-300" />
-                      <span>Menú Principal</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleSelectVisitas}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all whitespace-nowrap ${
-                        activeModule === 'visitas'
-                          ? 'bg-blue-600 text-white shadow-md ring-1 ring-white/20'
-                          : 'text-slate-100 hover:text-white hover:bg-slate-700'
-                      }`}
-                    >
-                      <ClipboardList className="w-3.5 h-3.5" />
-                      <span>Registro Visitas</span>
-                    </button>
-                  </>
+                {hasMultipleModules && (
+                  <button
+                    type="button"
+                    onClick={() => onChangeModule('portal')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all whitespace-nowrap ${
+                      activeModule === 'portal'
+                        ? 'bg-blue-600 text-white shadow-md ring-1 ring-white/20'
+                        : 'text-slate-100 hover:text-white hover:bg-slate-700'
+                    }`}
+                    title="Portal Principal de Entrada"
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5 text-blue-300" />
+                    <span>Menú Principal</span>
+                  </button>
                 )}
 
-                <button
-                  type="button"
-                  onClick={() => onChangeModule('clubes')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all whitespace-nowrap ${
-                    activeModule === 'clubes'
-                      ? 'bg-emerald-600 text-white shadow-md ring-1 ring-white/20'
-                      : 'text-slate-100 hover:text-white hover:bg-slate-700'
-                  }`}
-                >
-                  <Building2 className="w-3.5 h-3.5 text-emerald-300" />
-                  <span>Clubes</span>
-                </button>
+                {canSeeVisitas && (
+                  <button
+                    type="button"
+                    onClick={handleSelectVisitas}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all whitespace-nowrap ${
+                      activeModule === 'visitas'
+                        ? 'bg-blue-600 text-white shadow-md ring-1 ring-white/20'
+                        : 'text-slate-100 hover:text-white hover:bg-slate-700'
+                    }`}
+                  >
+                    <ClipboardList className="w-3.5 h-3.5" />
+                    <span>Registro Visitas</span>
+                  </button>
+                )}
 
-                {!isDirectivaClubes && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => onChangeModule('fotos')}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all whitespace-nowrap ${
-                        activeModule === 'fotos'
-                          ? 'bg-violet-600 text-white shadow-md ring-1 ring-white/20'
-                          : 'text-slate-100 hover:text-white hover:bg-slate-700'
-                      }`}
-                    >
-                      <Camera className="w-3.5 h-3.5 text-violet-300" />
-                      <span>Fotos</span>
-                    </button>
+                {canSeeClubes && (
+                  <button
+                    type="button"
+                    onClick={() => onChangeModule('clubes')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all whitespace-nowrap ${
+                      activeModule === 'clubes'
+                        ? 'bg-emerald-600 text-white shadow-md ring-1 ring-white/20'
+                        : 'text-slate-100 hover:text-white hover:bg-slate-700'
+                    }`}
+                  >
+                    <Building2 className="w-3.5 h-3.5 text-emerald-300" />
+                    <span>Clubes</span>
+                  </button>
+                )}
 
-                    <button
-                      type="button"
-                      onClick={() => onChangeModule('personaje_biblico')}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all whitespace-nowrap ${
-                        activeModule === 'personaje_biblico'
-                          ? 'bg-amber-600 text-white shadow-md ring-1 ring-white/20'
-                          : 'text-slate-100 hover:text-white hover:bg-slate-700'
-                      }`}
-                      title="Concurso Imita tu Personaje Bíblico"
-                    >
-                      <BookOpen className="w-3.5 h-3.5 text-amber-300" />
-                      <span className="hidden lg:inline">Personaje Bíblico</span>
-                      <span className="lg:hidden">Bíblico</span>
-                    </button>
-                  </>
+                {canSeeFotos && (
+                  <button
+                    type="button"
+                    onClick={() => onChangeModule('fotos')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all whitespace-nowrap ${
+                      activeModule === 'fotos'
+                        ? 'bg-violet-600 text-white shadow-md ring-1 ring-white/20'
+                        : 'text-slate-100 hover:text-white hover:bg-slate-700'
+                    }`}
+                  >
+                    <Camera className="w-3.5 h-3.5 text-violet-300" />
+                    <span>Fotos</span>
+                  </button>
+                )}
+
+                {canSeePersonaje && (
+                  <button
+                    type="button"
+                    onClick={() => onChangeModule('personaje_biblico')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all whitespace-nowrap ${
+                      activeModule === 'personaje_biblico'
+                        ? 'bg-amber-600 text-white shadow-md ring-1 ring-white/20'
+                        : 'text-slate-100 hover:text-white hover:bg-slate-700'
+                    }`}
+                    title="Concurso Imita tu Personaje Bíblico"
+                  >
+                    <BookOpen className="w-3.5 h-3.5 text-amber-300" />
+                    <span className="hidden lg:inline">Personaje Bíblico</span>
+                    <span className="lg:hidden">Bíblico</span>
+                  </button>
+                )}
+
+                {canSeeGames && (
+                  <button
+                    type="button"
+                    onClick={() => onChangeModule('jovenes_games')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all whitespace-nowrap ${
+                      activeModule === 'jovenes_games'
+                        ? 'bg-fuchsia-600 text-white shadow-md ring-1 ring-white/20'
+                        : 'text-slate-100 hover:text-white hover:bg-slate-700'
+                    }`}
+                    title="Sociedad de Jóvenes Games"
+                  >
+                    <Gamepad2 className="w-3.5 h-3.5 text-fuchsia-300" />
+                    <span className="hidden lg:inline">Jóvenes Games</span>
+                    <span className="lg:hidden">Games</span>
+                  </button>
                 )}
               </div>
             </div>
 
-            {/* Mobile Active Module Pill Indicator (for clear context on mobile without crowding) */}
-            {!isDirectivaClubes && (
-              <div className="md:hidden text-xs font-bold text-slate-300 truncate px-1">
-                {activeModule === 'portal'
-                  ? 'Inicio'
-                  : activeModule === 'visitas'
-                  ? 'Visitas'
-                  : activeModule === 'clubes'
-                  ? 'Clubes'
-                  : activeModule === 'fotos'
-                  ? 'Fotos'
-                  : 'Concurso'}
-              </div>
-            )}
+            {/* Mobile Active Module Indicator */}
+            <div className="md:hidden text-xs font-bold text-slate-300 truncate px-1">
+              {activeModule === 'portal'
+                ? 'Inicio'
+                : activeModule === 'visitas'
+                ? 'Visitas'
+                : activeModule === 'clubes'
+                ? 'Clubes'
+                : activeModule === 'fotos'
+                ? 'Fotos'
+                : activeModule === 'jovenes_games'
+                ? 'Jóvenes Games'
+                : 'Concurso'}
+            </div>
 
             {/* Zone 3: Actions & User Account Profile */}
             <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
@@ -207,7 +265,7 @@ export const Header: React.FC<HeaderProps> = ({
                 type="button"
                 onClick={onToggleDarkMode}
                 className="min-w-[40px] min-h-[40px] p-2 text-xs font-extrabold text-slate-200 hover:text-white bg-slate-800 hover:bg-slate-700 border-2 border-slate-700 rounded-xl transition-colors whitespace-nowrap shrink-0 flex items-center justify-center"
-                title={darkMode ? "Activar modo día" : "Activar modo noche"}
+                title={darkMode ? 'Activar modo día' : 'Activar modo noche'}
                 aria-label="Alternar modo noche"
               >
                 {darkMode ? (
@@ -217,8 +275,8 @@ export const Header: React.FC<HeaderProps> = ({
                 )}
               </button>
 
-              {/* Dedicated System Configuration & Database Modal (Desktop/Tablet bar; on mobile also inside User Menu) */}
-              {!isDirectivaClubes && (
+              {/* System Configuration */}
+              {canConfig && (
                 <button
                   type="button"
                   onClick={onOpenBackupModal}
@@ -230,8 +288,8 @@ export const Header: React.FC<HeaderProps> = ({
                 </button>
               )}
 
-              {/* Quick Register Visitor CTA (Desktop/Tablet; mobile has prominent button inside SubMenuVisitas) */}
-              {!isDirectivaClubes && activeModule === 'visitas' && (
+              {/* Quick Register Visitor CTA */}
+              {canSeeVisitas && activeModule === 'visitas' && (
                 <button
                   type="button"
                   onClick={onOpenRegister}
@@ -255,10 +313,10 @@ export const Header: React.FC<HeaderProps> = ({
                     }`}>
                       {currentUser.name.charAt(0).toUpperCase()}
                     </div>
-                    <div className="hidden sm:block text-left leading-tight max-w-[110px] truncate">
+                    <div className="hidden sm:block text-left leading-tight max-w-[140px] truncate">
                       <span className="font-bold text-white block text-xs truncate">{currentUser.name}</span>
                       <span className="text-[10px] text-blue-300 block truncate font-medium">
-                        {getRoleDisplayName(currentUser.role)}
+                        {getUserRolesDisplayName(currentUser)}
                       </span>
                     </div>
                     <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -266,13 +324,22 @@ export const Header: React.FC<HeaderProps> = ({
 
                   {/* Dropdown Menu */}
                   {showUserMenu && (
-                    <div className="absolute right-0 mt-2 w-64 bg-slate-900 border border-slate-800 text-white rounded-2xl shadow-2xl py-2 z-50 text-xs animate-in fade-in slide-in-from-top-2 duration-150">
-                      <div className="px-4 py-2.5 border-b border-slate-800">
-                        <p className="font-bold text-white">{currentUser.name}</p>
-                        <p className="text-[11px] text-slate-400 font-mono truncate">{currentUser.email}</p>
-                        <span className="inline-block mt-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-950 text-blue-300 border border-blue-800 uppercase tracking-wide">
-                          {getRoleDisplayName(currentUser.role)}
-                        </span>
+                    <div className="absolute right-0 mt-2 w-72 bg-slate-900 border border-slate-800 text-white rounded-2xl shadow-2xl py-2 z-50 text-xs animate-in fade-in slide-in-from-top-2 duration-150">
+                      <div className="px-4 py-2.5 border-b border-slate-800 space-y-1.5">
+                        <div>
+                          <p className="font-bold text-white">{currentUser.name}</p>
+                          <p className="text-[11px] text-slate-400 font-mono truncate">{currentUser.email}</p>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {userRoles.map((r) => (
+                            <span
+                              key={r}
+                              className="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-950 text-blue-300 border border-blue-800 uppercase tracking-wide"
+                            >
+                              {getRoleDisplayName(r)}
+                            </span>
+                          ))}
+                        </div>
                       </div>
 
                       {isAdmin && (
@@ -285,11 +352,11 @@ export const Header: React.FC<HeaderProps> = ({
                           className="w-full min-h-[44px] px-4 py-2.5 text-left text-slate-300 hover:bg-slate-800 hover:text-white font-medium flex items-center gap-2 transition-colors"
                         >
                           <Users className="w-4 h-4 text-blue-400" />
-                          <span>Gestión de Usuarios y Servidores</span>
+                          <span>Gestión de Usuarios y Perfiles</span>
                         </button>
                       )}
 
-                      {!isDirectivaClubes && (
+                      {canConfig && (
                         <button
                           type="button"
                           onClick={() => {
@@ -348,13 +415,13 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </header>
 
-      {/* Mobile Fixed Bottom Thumb-Zone Tab Bar (iOS & Android Native Pattern) */}
-      {!isDirectivaClubes && currentUser && (
+      {/* Mobile Fixed Bottom Thumb-Zone Tab Bar (when user has >1 allowed module) */}
+      {hasMultipleModules && currentUser && (
         <nav
           aria-label="Navegación móvil"
           className="fixed bottom-0 left-0 right-0 z-40 md:hidden bg-slate-900/95 backdrop-blur-md border-t border-slate-800 pb-safe no-print shadow-[0_-4px_20px_rgba(0,0,0,0.25)]"
         >
-          <div className="grid grid-cols-5 items-center h-16 px-1">
+          <div className={`grid ${mobileGridClass} items-center h-16 px-0.5`}>
             <button
               type="button"
               onClick={() => onChangeModule('portal')}
@@ -370,65 +437,90 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             </button>
 
-            <button
-              type="button"
-              onClick={handleSelectVisitas}
-              className={`flex flex-col items-center justify-center min-h-[52px] rounded-xl transition-colors ${
-                activeModule === 'visitas'
-                  ? 'text-blue-400'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <ClipboardList className="w-5 h-5" />
-              <span className={`text-[10px] mt-1 tracking-tight ${activeModule === 'visitas' ? 'font-extrabold' : 'font-medium'}`}>
-                Visitas
-              </span>
-            </button>
+            {canSeeVisitas && (
+              <button
+                type="button"
+                onClick={handleSelectVisitas}
+                className={`flex flex-col items-center justify-center min-h-[52px] rounded-xl transition-colors ${
+                  activeModule === 'visitas'
+                    ? 'text-blue-400'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <ClipboardList className="w-5 h-5" />
+                <span className={`text-[10px] mt-1 tracking-tight ${activeModule === 'visitas' ? 'font-extrabold' : 'font-medium'}`}>
+                  Visitas
+                </span>
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={() => onChangeModule('clubes')}
-              className={`flex flex-col items-center justify-center min-h-[52px] rounded-xl transition-colors ${
-                activeModule === 'clubes'
-                  ? 'text-emerald-400'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Building2 className="w-5 h-5" />
-              <span className={`text-[10px] mt-1 tracking-tight ${activeModule === 'clubes' ? 'font-extrabold' : 'font-medium'}`}>
-                Clubes
-              </span>
-            </button>
+            {canSeeClubes && (
+              <button
+                type="button"
+                onClick={() => onChangeModule('clubes')}
+                className={`flex flex-col items-center justify-center min-h-[52px] rounded-xl transition-colors ${
+                  activeModule === 'clubes'
+                    ? 'text-emerald-400'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Building2 className="w-5 h-5" />
+                <span className={`text-[10px] mt-1 tracking-tight ${activeModule === 'clubes' ? 'font-extrabold' : 'font-medium'}`}>
+                  Clubes
+                </span>
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={() => onChangeModule('fotos')}
-              className={`flex flex-col items-center justify-center min-h-[52px] rounded-xl transition-colors ${
-                activeModule === 'fotos'
-                  ? 'text-violet-400'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Camera className="w-5 h-5" />
-              <span className={`text-[10px] mt-1 tracking-tight ${activeModule === 'fotos' ? 'font-extrabold' : 'font-medium'}`}>
-                Fotos
-              </span>
-            </button>
+            {canSeeFotos && (
+              <button
+                type="button"
+                onClick={() => onChangeModule('fotos')}
+                className={`flex flex-col items-center justify-center min-h-[52px] rounded-xl transition-colors ${
+                  activeModule === 'fotos'
+                    ? 'text-violet-400'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Camera className="w-5 h-5" />
+                <span className={`text-[10px] mt-1 tracking-tight ${activeModule === 'fotos' ? 'font-extrabold' : 'font-medium'}`}>
+                  Fotos
+                </span>
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={() => onChangeModule('personaje_biblico')}
-              className={`flex flex-col items-center justify-center min-h-[52px] rounded-xl transition-colors ${
-                activeModule === 'personaje_biblico'
-                  ? 'text-amber-400'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <BookOpen className="w-5 h-5" />
-              <span className={`text-[10px] mt-1 tracking-tight ${activeModule === 'personaje_biblico' ? 'font-extrabold' : 'font-medium'}`}>
-                Bíblico
-              </span>
-            </button>
+            {canSeePersonaje && (
+              <button
+                type="button"
+                onClick={() => onChangeModule('personaje_biblico')}
+                className={`flex flex-col items-center justify-center min-h-[52px] rounded-xl transition-colors ${
+                  activeModule === 'personaje_biblico'
+                    ? 'text-amber-400'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <BookOpen className="w-5 h-5" />
+                <span className={`text-[10px] mt-1 tracking-tight ${activeModule === 'personaje_biblico' ? 'font-extrabold' : 'font-medium'}`}>
+                  Bíblico
+                </span>
+              </button>
+            )}
+
+            {canSeeGames && (
+              <button
+                type="button"
+                onClick={() => onChangeModule('jovenes_games')}
+                className={`flex flex-col items-center justify-center min-h-[52px] rounded-xl transition-colors ${
+                  activeModule === 'jovenes_games'
+                    ? 'text-fuchsia-400'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Gamepad2 className="w-5 h-5" />
+                <span className={`text-[10px] mt-1 tracking-tight ${activeModule === 'jovenes_games' ? 'font-extrabold' : 'font-medium'}`}>
+                  Games
+                </span>
+              </button>
+            )}
           </div>
         </nav>
       )}

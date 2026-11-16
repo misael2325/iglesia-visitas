@@ -96,6 +96,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       email: cleanEmail,
       password: password,
       role: finalRole,
+      roles: [finalRole],
       createdAt: new Date().toISOString(),
       lastLogin: new Date().toISOString(),
     };
@@ -237,6 +238,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               >
                 <option value="secretaria">Secretaría (Asistencia y Reportes únicamente)</option>
                 <option value="directiva_clubes">Directiva de Clubes (Solo módulo de Clubes)</option>
+                <option value="directiva_jovenes">Directiva de Jóvenes (Solo Sociedad de Jóvenes Games)</option>
                 <option value="pastor">Pastor (Supervisión Pastoral General)</option>
                 <option value="anciano">Anciano de Iglesia (Supervisión y Asistencia)</option>
                 <option value="administrador">Administrador General (Control Total)</option>

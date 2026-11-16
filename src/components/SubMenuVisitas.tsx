@@ -8,7 +8,7 @@ import {
   UserPlus
 } from 'lucide-react';
 import { NavTab } from './Header';
-import { isSecretariaRole, UserRole } from '../types';
+import { AppUser, isSecretariaRestrictedUser, isSecretariaRole, UserRole } from '../types';
 
 interface SubMenuVisitasProps {
   currentTab: NavTab;
@@ -16,6 +16,7 @@ interface SubMenuVisitasProps {
   onBackToPortal: () => void;
   onOpenRegister: () => void;
   userRole?: UserRole;
+  currentUser?: AppUser | null;
   attendeesCount?: number;
   eventsCount?: number;
 }
@@ -26,10 +27,13 @@ export const SubMenuVisitas: React.FC<SubMenuVisitasProps> = ({
   onBackToPortal,
   onOpenRegister,
   userRole,
+  currentUser,
   attendeesCount,
   eventsCount,
 }) => {
-  const isSecretaria = isSecretariaRole(userRole);
+  const isSecretaria = currentUser
+    ? isSecretariaRestrictedUser(currentUser)
+    : isSecretariaRole(userRole);
 
   const tabs: {
     id: NavTab;

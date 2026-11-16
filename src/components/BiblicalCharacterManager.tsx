@@ -28,11 +28,24 @@ import {
   RefreshCw,
   Cloud,
   Church,
-  Pencil
+  Pencil,
+  Trophy,
+  Play,
+  Award,
+  Save
 } from 'lucide-react';
-import { BiblicalCharacterRegistration, AppUser, ContestCustomConfig, CHURCH_OPTIONS } from '../types';
+import {
+  BiblicalCharacterRegistration,
+  AppUser,
+  ContestCustomConfig,
+  CHURCH_OPTIONS,
+  CharacterAgeCategory,
+  classifyCharacterByAge,
+  getCharacterCategoryLabel,
+  hasAnyUserRole,
+} from '../types';
 import { compressImageFile } from '../utils/photoStorage';
-import { createPublicRegistrationShareUrl, getSupabaseConfig } from '../services/supabaseClient';
+import { createPublicRegistrationShareUrl } from '../services/supabaseClient';
 
 interface BiblicalCharacterManagerProps {
   registrations: BiblicalCharacterRegistration[];
@@ -61,6 +74,7 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
   const [filterAudio, setFilterAudio] = useState<'all' | 'si' | 'no'>('all');
   const [filterStatus, setFilterStatus] = useState<'all' | 'aprobados' | 'pendientes'>('all');
   const [filterIglesia, setFilterIglesia] = useState<string>('all');
+  const [filterCategory, setFilterCategory] = useState<'all' | CharacterAgeCategory>('all');
 
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
@@ -71,8 +85,24 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
   const [isPrintScorecardOpen, setIsPrintScorecardOpen] = useState(false);
+  const [printCategoryMode, setPrintCategoryMode] = useState<'ambas' | 'ninos' | 'adultos'>('ambas');
+  const [printIglesia, setPrintIglesia] = useState<string>('all');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+
+  // Concurso en vivo (calificación en tiempo real + ganadores 1.º a 3.º lugar)
+  const [isLiveContestOpen, setIsLiveContestOpen] = useState(false);
+  const [contestCategoryTab, setContestCategoryTab] = useState<'ninos' | 'adultos' | 'all'>('ninos');
+  const [contestSearch, setContestSearch] = useState('');
+  const [contestFilterStatus, setContestFilterStatus] = useState<'all' | 'pendientes' | 'calificados'>('all');
+  const [scoreDrafts, setScoreDrafts] = useState<
+    Record<string, { vest: string; act: string; fid: string; total: string }>
+  >({});
+  const [savingScoreId, setSavingScoreId] = useState<string | null>(null);
+
+  const canScoreContest =
+    !currentUser ||
+    hasAnyUserRole(currentUser, ['administrador', 'admin', 'pastor', 'anciano']);
 
   // Auto-polling for new registrations from shared links every 12 seconds
   React.useEffect(() => {
@@ -184,6 +214,7 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
 
   const filtered = useMemo(() => {
     return registrations.filter((r) => {
+      const cat = classifyCharacterByAge(r.edad);
       const matchSearch =
         r.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
         r.personaje.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -204,9 +235,12 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
       const matchIglesia =
         filterIglesia === 'all' || r.iglesia === filterIglesia;
 
-      return matchSearch && matchAudio && matchStatus && matchIglesia;
+      const matchCategory =
+        filterCategory === 'all' || cat === filterCategory;
+
+      return matchSearch && matchAudio && matchStatus && matchIglesia && matchCategory;
     });
-  }, [registrations, searchTerm, filterAudio, filterStatus, filterIglesia]);
+  }, [registrations, searchTerm, filterAudio, filterStatus, filterIglesia, filterCategory]);
 
   // Metrics
   const stats = useMemo(() => {
@@ -214,7 +248,10 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
     const conAudio = registrations.filter((r) => r.audio === 'Sí').length;
     const sinAudio = registrations.filter((r) => r.audio === 'No').length;
     const aprobados = registrations.filter((r) => r.aprobado).length;
-    return { total, conAudio, sinAudio, aprobados };
+    const ninos = registrations.filter((r) => classifyCharacterByAge(r.edad) === 'ninos').length;
+    const adultos = registrations.filter((r) => classifyCharacterByAge(r.edad) === 'adultos').length;
+    const sinClasificar = total - ninos - adultos;
+    return { total, conAudio, sinAudio, aprobados, ninos, adultos, sinClasificar };
   }, [registrations]);
 
   const handleCopyAll = async () => {
@@ -223,22 +260,36 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
       return;
     }
 
-    const text = registrations
-      .map((r, i) => {
-        return `[#${i + 1}] ${r.nombre.toUpperCase()}${r.edad ? ` (${r.edad})` : ''}
+    const formatGroup = (title: string, items: BiblicalCharacterRegistration[]) => {
+      if (items.length === 0) return '';
+      const rows = items
+        .map((r, i) => {
+          return `[#${i + 1}] ${r.nombre.toUpperCase()}${r.edad ? ` (${r.edad})` : ''}
 ⛪ Iglesia: ${r.iglesia || 'No especificada'}
 👑 Personaje: ${r.personaje}
 📱 Contacto: ${r.contacto}
 🎵 Audio: ${r.audio}
 ✅ Estado: ${r.aprobado ? 'Aprobado' : 'Pendiente'}`;
-      })
-      .join('\n\n-------------------------------\n\n');
+        })
+        .join('\n\n');
+      return `=== ${title} (${items.length}) ===\n\n${rows}`;
+    };
 
-    const header = `📖 CONCURSO: IMITA TU PERSONAJE BÍBLICO\n📅 Sábado 28 de noviembre de 2026\nTotal Inscritos: ${registrations.length}\n\n`;
+    const ninosList = registrations.filter((r) => classifyCharacterByAge(r.edad) === 'ninos');
+    const adultosList = registrations.filter((r) => classifyCharacterByAge(r.edad) === 'adultos');
+    const sinEdadList = registrations.filter((r) => classifyCharacterByAge(r.edad) === 'sin_clasificar');
+
+    const sections = [
+      formatGroup('CATEGORÍA NIÑOS (HASTA 17 AÑOS)', ninosList),
+      formatGroup('CATEGORÍA ADULTOS (18+ AÑOS)', adultosList),
+      formatGroup('SIN EDAD ESPECIFICADA', sinEdadList),
+    ].filter(Boolean);
+
+    const header = `📖 CONCURSO: IMITA TU PERSONAJE BÍBLICO\n📅 Sábado 28 de noviembre de 2026\nTotal Inscritos: ${registrations.length} (Niños: ${ninosList.length} · Adultos: ${adultosList.length})\n\n`;
 
     try {
-      await navigator.clipboard.writeText(header + text);
-      showToast('¡Todas las inscripciones fueron copiadas al portapapeles!');
+      await navigator.clipboard.writeText(header + sections.join('\n\n-------------------------------\n\n'));
+      showToast('¡Inscripciones clasificadas copiadas al portapapeles!');
     } catch {
       showToast('No se pudo copiar automáticamente.');
     }
@@ -273,8 +324,8 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
 
   const handleCreateRegistration = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formNombre.trim() || !formContacto.trim() || !formPersonaje.trim() || !formAudio) {
-      showToast('Por favor completa los campos requeridos (*)');
+    if (!formNombre.trim() || !formEdad.trim() || !formContacto.trim() || !formPersonaje.trim() || !formAudio) {
+      showToast('Por favor completa todos los campos requeridos (*), incluyendo la edad');
       return;
     }
 
@@ -354,16 +405,179 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
     }
   };
 
+  // --- CONCURSO EN VIVO: MANEJO DE PUNTAJES EN TIEMPO REAL ---
+  const openLiveContestModal = () => {
+    const hasNinos = registrations.some((r) => classifyCharacterByAge(r.edad) === 'ninos');
+    const hasAdultos = registrations.some((r) => classifyCharacterByAge(r.edad) === 'adultos');
+    if (hasNinos) {
+      setContestCategoryTab('ninos');
+    } else if (hasAdultos) {
+      setContestCategoryTab('adultos');
+    } else {
+      setContestCategoryTab('all');
+    }
+    setScoreDrafts({});
+    setIsLiveContestOpen(true);
+  };
+
+  const getDraftForReg = (r: BiblicalCharacterRegistration) => {
+    const existing = scoreDrafts[r.id];
+    if (existing) return existing;
+    return {
+      vest: typeof r.puntajeCaracterizacion === 'number' ? String(r.puntajeCaracterizacion) : '',
+      act: typeof r.puntajeActuacion === 'number' ? String(r.puntajeActuacion) : '',
+      fid: typeof r.puntajeFidelidad === 'number' ? String(r.puntajeFidelidad) : '',
+      total: typeof r.puntajeTotal === 'number' ? String(r.puntajeTotal) : '',
+    };
+  };
+
+  const clampNum = (raw: string, max: number): number | undefined => {
+    const cleaned = raw.replace(/,/g, '.').trim();
+    if (!cleaned) return undefined;
+    const n = Number(cleaned);
+    if (!Number.isFinite(n)) return undefined;
+    return Math.max(0, Math.min(max, Math.round(n * 10) / 10));
+  };
+
+  const handleCriteriaDraftChange = (
+    r: BiblicalCharacterRegistration,
+    field: 'vest' | 'act' | 'fid',
+    value: string
+  ) => {
+    const current = getDraftForReg(r);
+    const updated = { ...current, [field]: value };
+    const v = clampNum(updated.vest, 30);
+    const a = clampNum(updated.act, 30);
+    const f = clampNum(updated.fid, 40);
+    if (v !== undefined || a !== undefined || f !== undefined) {
+      const sum = Math.min(100, Math.round(((v ?? 0) + (a ?? 0) + (f ?? 0)) * 10) / 10);
+      updated.total = String(sum);
+    } else {
+      updated.total = '';
+    }
+    setScoreDrafts((prev) => ({ ...prev, [r.id]: updated }));
+  };
+
+  const handleDirectTotalDraftChange = (r: BiblicalCharacterRegistration, value: string) => {
+    const current = getDraftForReg(r);
+    setScoreDrafts((prev) => ({
+      ...prev,
+      [r.id]: {
+        ...current,
+        vest: '',
+        act: '',
+        fid: '',
+        total: value,
+      },
+    }));
+  };
+
+  const handleSaveParticipantScore = async (r: BiblicalCharacterRegistration) => {
+    if (!canScoreContest) {
+      showToast('Solo administradores pueden registrar o modificar puntajes.');
+      return;
+    }
+    const draft = getDraftForReg(r);
+    const v = clampNum(draft.vest, 30);
+    const a = clampNum(draft.act, 30);
+    const f = clampNum(draft.fid, 40);
+    const directTotal = clampNum(draft.total, 100);
+
+    const hasCriteria = v !== undefined || a !== undefined || f !== undefined;
+    const computedTotal = hasCriteria
+      ? Math.min(100, Math.round(((v ?? 0) + (a ?? 0) + (f ?? 0)) * 10) / 10)
+      : directTotal;
+
+    if (computedTotal === undefined) {
+      showToast(`Ingresa el puntaje de ${r.nombre} antes de guardar.`);
+      return;
+    }
+
+    setSavingScoreId(r.id);
+    try {
+      const updatedReg: BiblicalCharacterRegistration = {
+        ...r,
+        puntajeCaracterizacion: v,
+        puntajeActuacion: a,
+        puntajeFidelidad: f,
+        puntajeTotal: computedTotal,
+        participo: true,
+        calificadoPor: currentUser?.name || 'Administrador',
+        calificadoAt: new Date().toISOString(),
+      };
+      await onUpdateRegistration(updatedReg);
+      setScoreDrafts((prev) => {
+        const next = { ...prev };
+        delete next[r.id];
+        return next;
+      });
+      showToast(`✅ ${r.nombre}: ${computedTotal} pts guardados en vivo.`);
+    } finally {
+      setSavingScoreId(null);
+    }
+  };
+
+  const handleClearParticipantScore = async (r: BiblicalCharacterRegistration) => {
+    if (!canScoreContest) return;
+    setSavingScoreId(r.id);
+    try {
+      const clearedReg: BiblicalCharacterRegistration = {
+        ...r,
+        puntajeCaracterizacion: undefined,
+        puntajeActuacion: undefined,
+        puntajeFidelidad: undefined,
+        puntajeTotal: undefined,
+        participo: false,
+        calificadoPor: undefined,
+        calificadoAt: undefined,
+      };
+      await onUpdateRegistration(clearedReg);
+      setScoreDrafts((prev) => {
+        const next = { ...prev };
+        delete next[r.id];
+        return next;
+      });
+      showToast(`Puntaje de ${r.nombre} reiniciado.`);
+    } finally {
+      setSavingScoreId(null);
+    }
+  };
+
+  const renderCategoryBadge = (edad?: string) => {
+    const cat = classifyCharacterByAge(edad);
+    if (cat === 'ninos') {
+      return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-sky-100 dark:bg-sky-950 text-sky-800 dark:text-sky-300 border border-sky-300 dark:border-sky-800 whitespace-nowrap">
+          Niños
+        </span>
+      );
+    }
+    if (cat === 'adultos') {
+      return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800 whitespace-nowrap">
+          Adultos
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-300 dark:border-slate-700 whitespace-nowrap">
+        Sin edad
+      </span>
+    );
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       {/* Toast Notification */}
       {toastMsg && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 bg-amber-900 text-amber-50 text-xs font-semibold rounded-2xl shadow-xl border border-amber-700 animate-in slide-in-from-bottom-3">
+        <div className="no-print fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 bg-amber-900 text-amber-50 text-xs font-semibold rounded-2xl shadow-xl border border-amber-700 animate-in slide-in-from-bottom-3">
           <CheckCircle2 className="w-4 h-4 text-amber-300 shrink-0" />
           <span>{toastMsg}</span>
         </div>
       )}
 
+      {/* Main Management Content (hidden when printing separated scorecards or live contest) */}
+      <div className={isPrintScorecardOpen || isLiveContestOpen ? 'no-print space-y-6' : 'space-y-6'}>
       {/* Top Breadcrumb & Header Banner */}
       <div className="bg-white dark:bg-slate-900 rounded-3xl border-2 border-amber-300 dark:border-amber-900/60 p-4 sm:p-8 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -442,71 +656,127 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
               className="min-h-[42px] px-3.5 sm:px-4 py-2.5 rounded-2xl border-2 border-slate-300 dark:border-slate-700 hover:border-amber-600 dark:hover:border-amber-500 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-extrabold text-xs inline-flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
             >
               <Printer className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-              <span>Planilla Jurado</span>
+              <span>Imprimir (Niños / Adultos)</span>
             </button>
 
             <button
               type="button"
               onClick={() => setIsNewModalOpen(true)}
-              className="min-h-[44px] sm:col-span-2 md:col-span-1 px-4 py-2.5 rounded-2xl bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-xs inline-flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
+              className="min-h-[44px] px-4 py-2.5 rounded-2xl bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-xs inline-flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
             >
               <Plus className="w-4 h-4 shrink-0" />
               <span>Nueva Inscripción</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={openLiveContestModal}
+              className="min-h-[44px] sm:col-span-2 md:col-span-1 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-amber-600 hover:from-indigo-500 hover:via-purple-500 hover:to-amber-500 text-white font-extrabold text-xs inline-flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer"
+              title="Abrir panel en tiempo real para puntuar y calcular ganadores"
+            >
+              <Play className="w-4 h-4 fill-current shrink-0" />
+              <span>Iniciar Concurso</span>
             </button>
           </div>
         </div>
 
         {/* METRICS ROW */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mt-6 pt-6 border-t border-slate-200 dark:border-slate-800">
-          <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-3.5 mt-6 pt-6 border-t border-slate-200 dark:border-slate-800">
+          <button
+            type="button"
+            onClick={() => setFilterCategory('all')}
+            className={`text-left p-3.5 rounded-2xl border transition-all cursor-pointer ${
+              filterCategory === 'all'
+                ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-700 ring-2 ring-amber-400/30'
+                : 'bg-amber-50/60 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/50'
+            }`}
+          >
             <div className="flex items-center justify-between text-amber-800 dark:text-amber-300 mb-1">
-              <span className="text-xs font-bold uppercase">Total Inscritos</span>
+              <span className="text-[11px] font-bold uppercase">Total Inscritos</span>
               <Users className="w-4 h-4" />
             </div>
             <div className="text-2xl font-black text-amber-900 dark:text-amber-200 font-mono">
               {stats.total}
             </div>
-            <span className="text-[11px] text-amber-700/80 dark:text-amber-400/80">participantes registrados</span>
-          </div>
+            <span className="text-[11px] text-amber-700/80 dark:text-amber-400/80">participantes</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setFilterCategory(filterCategory === 'ninos' ? 'all' : 'ninos')}
+            className={`text-left p-3.5 rounded-2xl border transition-all cursor-pointer ${
+              filterCategory === 'ninos'
+                ? 'bg-sky-100 dark:bg-sky-950/60 border-sky-500 ring-2 ring-sky-400/40'
+                : 'bg-sky-50 dark:bg-sky-950/40 border-sky-200 dark:border-sky-900/50 hover:border-sky-400'
+            }`}
+          >
+            <div className="flex items-center justify-between text-sky-800 dark:text-sky-300 mb-1">
+              <span className="text-[11px] font-bold uppercase">Niños</span>
+              <Users className="w-4 h-4" />
+            </div>
+            <div className="text-2xl font-black text-sky-900 dark:text-sky-200 font-mono">
+              {stats.ninos}
+            </div>
+            <span className="text-[11px] text-sky-700/80 dark:text-sky-400/80">hasta 17 años</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setFilterCategory(filterCategory === 'adultos' ? 'all' : 'adultos')}
+            className={`text-left p-3.5 rounded-2xl border transition-all cursor-pointer ${
+              filterCategory === 'adultos'
+                ? 'bg-indigo-100 dark:bg-indigo-950/60 border-indigo-500 ring-2 ring-indigo-400/40'
+                : 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-900/50 hover:border-indigo-400'
+            }`}
+          >
+            <div className="flex items-center justify-between text-indigo-800 dark:text-indigo-300 mb-1">
+              <span className="text-[11px] font-bold uppercase">Adultos</span>
+              <User className="w-4 h-4" />
+            </div>
+            <div className="text-2xl font-black text-indigo-900 dark:text-indigo-200 font-mono">
+              {stats.adultos}
+            </div>
+            <span className="text-[11px] text-indigo-700/80 dark:text-indigo-400/80">18 años en adelante</span>
+          </button>
 
           <div className="p-3.5 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50">
             <div className="flex items-center justify-between text-blue-800 dark:text-blue-300 mb-1">
-              <span className="text-xs font-bold uppercase">Con Audio</span>
+              <span className="text-[11px] font-bold uppercase">Con Audio</span>
               <Volume2 className="w-4 h-4" />
             </div>
             <div className="text-2xl font-black text-blue-900 dark:text-blue-200 font-mono">
               {stats.conAudio}
             </div>
-            <span className="text-[11px] text-blue-700/80 dark:text-blue-400/80">requieren pista musical</span>
+            <span className="text-[11px] text-blue-700/80 dark:text-blue-400/80">pista musical</span>
           </div>
 
           <div className="p-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700">
             <div className="flex items-center justify-between text-slate-800 dark:text-slate-300 mb-1">
-              <span className="text-xs font-bold uppercase">Sin Audio</span>
+              <span className="text-[11px] font-bold uppercase">Sin Audio</span>
               <VolumeX className="w-4 h-4" />
             </div>
             <div className="text-2xl font-black text-slate-900 dark:text-slate-100 font-mono">
               {stats.sinAudio}
             </div>
-            <span className="text-[11px] text-slate-600 dark:text-slate-400">solo voz y actuación</span>
+            <span className="text-[11px] text-slate-600 dark:text-slate-400">solo voz</span>
           </div>
 
           <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50">
             <div className="flex items-center justify-between text-emerald-800 dark:text-emerald-300 mb-1">
-              <span className="text-xs font-bold uppercase">Aprobados / Listos</span>
+              <span className="text-[11px] font-bold uppercase">Aprobados</span>
               <CheckCircle2 className="w-4 h-4" />
             </div>
             <div className="text-2xl font-black text-emerald-900 dark:text-emerald-200 font-mono">
               {stats.aprobados}
             </div>
-            <span className="text-[11px] text-emerald-700/80 dark:text-emerald-400/80">confirmados en orden</span>
+            <span className="text-[11px] text-emerald-700/80 dark:text-emerald-400/80">confirmados</span>
           </div>
         </div>
       </div>
 
       {/* FILTER & SEARCH TOOLBAR */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-slate-200 dark:border-slate-800 p-3.5 sm:p-4 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        <div className="relative w-full md:w-80">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-slate-200 dark:border-slate-800 p-3.5 sm:p-4 shadow-sm flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+        <div className="relative w-full lg:w-72">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
@@ -517,7 +787,57 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
           />
         </div>
 
-        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 w-full md:w-auto">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 w-full lg:w-auto">
+          {/* Categoría Edad Filter */}
+          <div className="flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1 border border-slate-300 dark:border-slate-700 text-[11px] sm:text-xs font-bold">
+            <button
+              type="button"
+              onClick={() => setFilterCategory('all')}
+              className={`flex-1 sm:flex-initial min-h-[34px] px-2.5 py-1 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                filterCategory === 'all'
+                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              Todos
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterCategory('ninos')}
+              className={`flex-1 sm:flex-initial min-h-[34px] px-2.5 py-1 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                filterCategory === 'ninos'
+                  ? 'bg-sky-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              Niños ({stats.ninos})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterCategory('adultos')}
+              className={`flex-1 sm:flex-initial min-h-[34px] px-2.5 py-1 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                filterCategory === 'adultos'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              Adultos ({stats.adultos})
+            </button>
+            {stats.sinClasificar > 0 && (
+              <button
+                type="button"
+                onClick={() => setFilterCategory('sin_clasificar')}
+                className={`flex-1 sm:flex-initial min-h-[34px] px-2.5 py-1 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                  filterCategory === 'sin_clasificar'
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                }`}
+              >
+                Sin edad ({stats.sinClasificar})
+              </button>
+            )}
+          </div>
+
           {/* Iglesia Filter */}
           <div className="relative">
             <Church className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -546,7 +866,7 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
             >
-              Todos ({registrations.length})
+              Audio: Todos
             </button>
             <button
               type="button"
@@ -557,7 +877,7 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
             >
-              Con Audio ({stats.conAudio})
+              Sí ({stats.conAudio})
             </button>
             <button
               type="button"
@@ -568,7 +888,7 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
             >
-              Sin Audio ({stats.sinAudio})
+              No ({stats.sinAudio})
             </button>
           </div>
 
@@ -637,21 +957,30 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => handleToggleAprobado(r)}
-                    className={`min-h-[34px] inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold transition-all shrink-0 ${
-                      r.aprobado
-                        ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
-                        : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
-                    }`}
-                  >
-                    {r.aprobado ? <Check className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
-                    <span>{r.aprobado ? 'Aprobado' : 'Pendiente'}</span>
-                  </button>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleAprobado(r)}
+                      className={`min-h-[34px] inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-extrabold transition-all shrink-0 ${
+                        r.aprobado
+                          ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                          : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                      }`}
+                    >
+                      {r.aprobado ? <Check className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+                      <span>{r.aprobado ? 'Aprobado' : 'Pendiente'}</span>
+                    </button>
+                    {typeof r.puntajeTotal === 'number' && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-black bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-200 border border-purple-300 dark:border-purple-800 font-mono">
+                        <Trophy className="w-3 h-3 text-amber-500" />
+                        <span>{r.puntajeTotal} pts</span>
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-600 dark:text-slate-300 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  {renderCategoryBadge(r.edad)}
                   {r.iglesia && (
                     <span className="inline-flex items-center gap-1 font-bold text-amber-800 dark:text-amber-300">
                       <Church className="w-3.5 h-3.5 shrink-0" />
@@ -731,6 +1060,7 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
                   <th className="py-3.5 px-4">Nombre y Apellido</th>
                   <th className="py-3.5 px-4">Iglesia</th>
                   <th className="py-3.5 px-4">Edad</th>
+                  <th className="py-3.5 px-4">Categoría</th>
                   <th className="py-3.5 px-4">Contacto</th>
                   <th className="py-3.5 px-4">Personaje Bíblico</th>
                   <th className="py-3.5 px-4">¿Requiere Audio?</th>
@@ -768,6 +1098,10 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
                     </td>
 
                     <td className="py-3.5 px-4">
+                      {renderCategoryBadge(r.edad)}
+                    </td>
+
+                    <td className="py-3.5 px-4">
                       <div className="flex items-center gap-1.5 font-semibold text-slate-700 dark:text-slate-300">
                         <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         <span>{r.contacto}</span>
@@ -796,27 +1130,35 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
                     </td>
 
                     <td className="py-3.5 px-4">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleAprobado(r)}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-extrabold transition-all cursor-pointer ${
-                          r.aprobado
-                            ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
-                            : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
-                        }`}
-                      >
-                        {r.aprobado ? (
-                          <>
-                            <Check className="w-3 h-3" />
-                            <span>Aprobado</span>
-                          </>
-                        ) : (
-                          <>
-                            <Clock className="w-3 h-3" />
-                            <span>Pendiente</span>
-                          </>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleAprobado(r)}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-extrabold transition-all cursor-pointer ${
+                            r.aprobado
+                              ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                              : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                          }`}
+                        >
+                          {r.aprobado ? (
+                            <>
+                              <Check className="w-3 h-3" />
+                              <span>Aprobado</span>
+                            </>
+                          ) : (
+                            <>
+                              <Clock className="w-3 h-3" />
+                              <span>Pendiente</span>
+                            </>
+                          )}
+                        </button>
+                        {typeof r.puntajeTotal === 'number' && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-black bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-200 border border-purple-300 dark:border-purple-800 font-mono">
+                            <Trophy className="w-3 h-3 text-amber-500" />
+                            <span>{r.puntajeTotal} pts</span>
+                          </span>
                         )}
-                      </button>
+                      </div>
                     </td>
 
                     <td className="py-3.5 px-4 text-right">
@@ -866,6 +1208,7 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
         </div>
         </>
       )}
+      </div>
 
       {/* DETAIL MODAL */}
       {selectedDetail && (
@@ -901,10 +1244,13 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
 
               <div className="grid grid-cols-2 gap-3 pt-1">
                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                  <span className="text-slate-500 dark:text-slate-400 block font-bold mb-0.5">Edad:</span>
-                  <span className="font-extrabold text-slate-900 dark:text-white text-sm">
-                    {selectedDetail.edad || 'No especificada'}
-                  </span>
+                  <span className="text-slate-500 dark:text-slate-400 block font-bold mb-0.5">Edad / Categoría:</span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-extrabold text-slate-900 dark:text-white text-sm">
+                      {selectedDetail.edad || 'No especificada'}
+                    </span>
+                    {renderCategoryBadge(selectedDetail.edad)}
+                  </div>
                 </div>
                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
                   <span className="text-slate-500 dark:text-slate-400 block font-bold mb-0.5">Contacto:</span>
@@ -1010,15 +1356,24 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold mb-1 text-slate-900 dark:text-white">
-                    Edad
+                    Edad <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
+                    required
+                    inputMode="numeric"
                     placeholder="Ej. 12 años"
                     value={formEdad}
                     onChange={(e) => setFormEdad(e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium"
                   />
+                  <div className="mt-1 flex items-center gap-1.5">
+                    {formEdad.trim() ? (
+                      renderCategoryBadge(formEdad)
+                    ) : (
+                      <span className="text-[10px] text-slate-500">Niños: hasta 17 · Adultos: 18+</span>
+                    )}
+                  </div>
                 </div>
 
                 <div>
@@ -1166,10 +1521,15 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
                   </label>
                   <input
                     type="text"
+                    inputMode="numeric"
+                    placeholder="Ej. 14 años"
                     value={editingReg.edad || ''}
                     onChange={(e) => setEditingReg({ ...editingReg, edad: e.target.value })}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium"
                   />
+                  <div className="mt-1">
+                    {renderCategoryBadge(editingReg.edad)}
+                  </div>
                 </div>
                 <div>
                   <label className="block font-bold mb-1 text-slate-900 dark:text-white">
@@ -1309,53 +1669,65 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
         </div>
       )}
 
-      {/* PRINT SCORECARD MODAL / JURADO VIEW */}
-      {isPrintScorecardOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white text-slate-950 border border-slate-300 rounded-3xl max-w-4xl w-full p-6 sm:p-8 shadow-2xl max-h-[92vh] overflow-y-auto space-y-6">
-            <div className="flex items-center justify-between border-b pb-4">
+      {/* PRINT SCORECARD MODAL / HOJAS SEPARADAS NIÑOS Y ADULTOS */}
+      {isPrintScorecardOpen && (() => {
+        const baseForPrint = printIglesia === 'all'
+          ? registrations
+          : registrations.filter((r) => r.iglesia === printIglesia);
+
+        const ninosRows = baseForPrint.filter((r) => classifyCharacterByAge(r.edad) === 'ninos');
+        const adultosRows = baseForPrint.filter((r) => classifyCharacterByAge(r.edad) === 'adultos');
+        const sinEdadRows = baseForPrint.filter((r) => classifyCharacterByAge(r.edad) === 'sin_clasificar');
+
+        const showNinosSheet = printCategoryMode === 'ambas' || printCategoryMode === 'ninos';
+        const showAdultosSheet = printCategoryMode === 'ambas' || printCategoryMode === 'adultos';
+
+        const renderPrintableSheet = (
+          sheetTitle: string,
+          ageRangeLabel: string,
+          badgeStyle: string,
+          rows: BiblicalCharacterRegistration[],
+          startOnNewPage: boolean
+        ) => (
+          <section
+            className={
+              startOnNewPage
+                ? 'print-page-break pt-8 border-t-4 border-dashed border-slate-300 print:border-t-0 print:pt-0 space-y-5'
+                : 'space-y-5'
+            }
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b-2 border-slate-300 pb-4">
               <div>
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-100 text-amber-900 text-xs font-black uppercase">
-                  Planilla Oficial del Jurado Calificador
+                <div className={`inline-flex items-center gap-2 px-3.5 py-1 rounded-full text-xs font-black uppercase tracking-wide ${badgeStyle}`}>
+                  <span>HOJA OFICIAL · {sheetTitle}</span>
+                  <span>({ageRangeLabel})</span>
                 </div>
-                <h2 className="text-2xl font-black mt-1">
-                  Concurso Bíblico: Imita tu Personaje Bíblico
+                <h2 className="text-xl sm:text-2xl font-black mt-1.5 text-slate-950">
+                  Concurso Bíblico: Imita tu Personaje Bíblico · {sheetTitle}
                 </h2>
                 <p className="text-xs text-slate-600 font-semibold">
-                  Sábado 28 de noviembre de 2026 · Criterios: Caracterización (30%), Interpretación (30%), Fidelidad Bíblica y Mensaje (40%)
+                  Sábado 28 de noviembre de 2026
+                  {printIglesia !== 'all' ? ` · Iglesia: ${printIglesia}` : ' · Todas las iglesias'}
+                  {' · '}Criterios: Caracterización (30%), Actuación (30%), Fidelidad Bíblica (40%)
                 </p>
               </div>
 
-              <div className="flex items-center gap-2 no-print">
-                <button
-                  type="button"
-                  onClick={() => window.print()}
-                  className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-xs inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
-                >
-                  <Printer className="w-4 h-4" />
-                  <span>Imprimir / Guardar PDF</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsPrintScorecardOpen(false)}
-                  className="p-2 rounded-xl border text-slate-500 hover:bg-slate-100 cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+              <div className="px-4 py-2 rounded-2xl border-2 border-slate-300 bg-slate-50 text-center shrink-0">
+                <span className="block text-xl font-black font-mono text-slate-950">{rows.length}</span>
+                <span className="text-[10px] font-extrabold uppercase text-slate-600">{sheetTitle}</span>
               </div>
             </div>
 
-            {/* Scorecard Table */}
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border border-slate-300">
                 <thead className="bg-slate-100 text-slate-800 font-black border-b border-slate-300">
                   <tr>
-                    <th className="p-2 border-r border-slate-300 w-8">#</th>
+                    <th className="p-2 border-r border-slate-300 w-8 text-center">#</th>
                     <th className="p-2 border-r border-slate-300">Nombre y Apellido</th>
                     <th className="p-2 border-r border-slate-300">Iglesia</th>
-                    <th className="p-2 border-r border-slate-300 w-16">Edad</th>
+                    <th className="p-2 border-r border-slate-300 w-16 text-center">Edad</th>
                     <th className="p-2 border-r border-slate-300">Personaje Bíblico</th>
-                    <th className="p-2 border-r border-slate-300 w-16 text-center">Audio</th>
+                    <th className="p-2 border-r border-slate-300 w-14 text-center">Audio</th>
                     <th className="p-2 border-r border-slate-300 text-center w-24">Vestuario / Caract. (30)</th>
                     <th className="p-2 border-r border-slate-300 text-center w-24">Actuación / Voz (30)</th>
                     <th className="p-2 border-r border-slate-300 text-center w-24">Fidelidad Bíblica (40)</th>
@@ -1364,12 +1736,12 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-300">
-                  {registrations.map((r, i) => (
+                  {rows.map((r, i) => (
                     <tr key={r.id} className="h-14">
                       <td className="p-2 border-r border-slate-300 font-mono font-bold text-center">{i + 1}</td>
                       <td className="p-2 border-r border-slate-300 font-bold">{r.nombre}</td>
                       <td className="p-2 border-r border-slate-300 text-slate-700 font-semibold">{r.iglesia || '-'}</td>
-                      <td className="p-2 border-r border-slate-300 text-slate-600">{r.edad || '-'}</td>
+                      <td className="p-2 border-r border-slate-300 text-slate-700 text-center font-semibold">{r.edad || '-'}</td>
                       <td className="p-2 border-r border-slate-300 font-bold text-amber-900">{r.personaje}</td>
                       <td className="p-2 border-r border-slate-300 text-center font-bold">{r.audio}</td>
                       <td className="p-2 border-r border-slate-300 text-center"></td>
@@ -1379,11 +1751,10 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
                       <td className="p-2"></td>
                     </tr>
                   ))}
-                  {/* Empty rows if few */}
-                  {Array.from({ length: Math.max(0, 5 - registrations.length) }).map((_, idx) => (
-                    <tr key={`empty-${idx}`} className="h-14">
+                  {Array.from({ length: Math.max(0, 4 - rows.length) }).map((_, idx) => (
+                    <tr key={`empty-${sheetTitle}-${idx}`} className="h-14">
                       <td className="p-2 border-r border-slate-300 font-mono font-bold text-center text-slate-400">
-                        {registrations.length + idx + 1}
+                        {rows.length + idx + 1}
                       </td>
                       <td className="p-2 border-r border-slate-300"></td>
                       <td className="p-2 border-r border-slate-300"></td>
@@ -1401,24 +1772,782 @@ export const BiblicalCharacterManager: React.FC<BiblicalCharacterManagerProps> =
               </table>
             </div>
 
-            {/* Signature section */}
-            <div className="pt-6 border-t border-slate-200 grid grid-cols-3 gap-6 text-center text-xs">
+            <div className="pt-5 border-t border-slate-200 grid grid-cols-3 gap-6 text-center text-xs print-avoid-break">
               <div className="space-y-8">
                 <div className="border-b border-slate-400 h-8" />
-                <span className="font-bold text-slate-700">Firma Jurado 1</span>
+                <span className="font-bold text-slate-700">Firma Jurado 1 ({sheetTitle})</span>
               </div>
               <div className="space-y-8">
                 <div className="border-b border-slate-400 h-8" />
-                <span className="font-bold text-slate-700">Firma Jurado 2</span>
+                <span className="font-bold text-slate-700">Firma Jurado 2 ({sheetTitle})</span>
               </div>
               <div className="space-y-8">
                 <div className="border-b border-slate-400 h-8" />
                 <span className="font-bold text-slate-700">Firma Pastor / Anciano</span>
               </div>
             </div>
+          </section>
+        );
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200 print:static print:inset-auto print:block print:bg-white print:p-0 print:backdrop-blur-none">
+            <div className="bg-white text-slate-950 border border-slate-300 rounded-3xl max-w-5xl w-full p-5 sm:p-8 shadow-2xl max-h-[92vh] overflow-y-auto space-y-6 print:border-0 print:rounded-none print:max-w-none print:max-h-none print:overflow-visible print:shadow-none print:p-0 print:space-y-0">
+              {/* Top Controls Bar (hidden on print) */}
+              <div className="no-print flex flex-col md:flex-row md:items-center justify-between gap-3 pb-4 border-b border-slate-200 bg-slate-50 -mx-5 sm:-mx-8 -mt-5 sm:-mt-8 px-5 sm:px-8 pt-5 sm:pt-6 rounded-t-3xl">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="inline-flex rounded-xl bg-white p-1 border border-slate-300 text-xs font-extrabold shadow-xs">
+                    <button
+                      type="button"
+                      onClick={() => setPrintCategoryMode('ambas')}
+                      className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                        printCategoryMode === 'ambas'
+                          ? 'bg-amber-600 text-white shadow-xs'
+                          : 'text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      Ambas Hojas (Niños + Adultos)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPrintCategoryMode('ninos')}
+                      className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                        printCategoryMode === 'ninos'
+                          ? 'bg-sky-600 text-white shadow-xs'
+                          : 'text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      Solo Niños ({ninosRows.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPrintCategoryMode('adultos')}
+                      className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                        printCategoryMode === 'adultos'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      Solo Adultos ({adultosRows.length})
+                    </button>
+                  </div>
+
+                  <select
+                    value={printIglesia}
+                    onChange={(e) => setPrintIglesia(e.target.value)}
+                    className="px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs font-bold text-slate-800 cursor-pointer"
+                  >
+                    <option value="all">Todas las iglesias</option>
+                    {CHURCH_OPTIONS.map((ch) => (
+                      <option key={ch} value={ch}>
+                        {ch}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2 self-end md:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-xs inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>Imprimir Hojas Separadas</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsPrintScorecardOpen(false)}
+                    className="p-2 rounded-xl border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {printCategoryMode === 'ambas' && (
+                <div className="no-print p-3 rounded-2xl bg-amber-50 border border-amber-200 text-xs font-semibold text-amber-900 flex flex-wrap items-center justify-between gap-2">
+                  <span>
+                    Al imprimir se generarán <strong>hojas separadas</strong>: la hoja 1 de <strong>Niños</strong> y en una hoja distinta la de <strong>Adultos</strong>.
+                  </span>
+                  {sinEdadRows.length > 0 && (
+                    <span className="font-bold text-rose-700">
+                      Nota: {sinEdadRows.length} participante(s) sin edad ingresada aparecerán en una hoja adicional.
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* HOJA 1: NIÑOS */}
+              {showNinosSheet &&
+                renderPrintableSheet(
+                  'NIÑOS',
+                  'Hasta 17 años',
+                  'bg-sky-100 text-sky-900 border border-sky-300',
+                  ninosRows,
+                  false
+                )}
+
+              {/* HOJA 2: ADULTOS (salto de página automático cuando se imprimen ambas) */}
+              {showAdultosSheet &&
+                renderPrintableSheet(
+                  'ADULTOS',
+                  '18 años en adelante',
+                  'bg-indigo-100 text-indigo-900 border border-indigo-300',
+                  adultosRows,
+                  showNinosSheet
+                )}
+
+              {/* HOJA 3 OPCIONAL: SIN EDAD ESPECIFICADA */}
+              {printCategoryMode === 'ambas' &&
+                sinEdadRows.length > 0 &&
+                renderPrintableSheet(
+                  'SIN EDAD ESPECIFICADA',
+                  'Pendiente de clasificar',
+                  'bg-slate-200 text-slate-800 border border-slate-300',
+                  sinEdadRows,
+                  true
+                )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      {/* MODAL DE CONCURSO EN VIVO: CALIFICACIÓN EN TIEMPO REAL Y GANADORES (1.º - 3.º LUGAR) */}
+      {isLiveContestOpen && (() => {
+        const categoryParticipants = registrations.filter((r) => {
+          if (contestCategoryTab === 'all') return true;
+          return classifyCharacterByAge(r.edad) === contestCategoryTab;
+        });
+
+        const scoredRaw = categoryParticipants
+          .filter((r) => r.participo === true || typeof r.puntajeTotal === 'number')
+          .sort((a, b) => {
+            const diff = (b.puntajeTotal ?? 0) - (a.puntajeTotal ?? 0);
+            if (diff !== 0) return diff;
+            const fidDiff = (b.puntajeFidelidad ?? 0) - (a.puntajeFidelidad ?? 0);
+            if (fidDiff !== 0) return fidDiff;
+            return (a.calificadoAt || a.fecha || '').localeCompare(b.calificadoAt || b.fecha || '');
+          });
+
+        // Asignar lugar únicamente del 1.º al 3.º; después del 3.º lugar NO se asigna lugar
+        const rankedEntries: Array<{ reg: BiblicalCharacterRegistration; place: 1 | 2 | 3 | null }> = [];
+        let lastScore: number | null = null;
+        let lastPlace = 0;
+
+        scoredRaw.forEach((reg, idx) => {
+          const score = reg.puntajeTotal ?? 0;
+          const computedPlace = lastScore !== null && score === lastScore ? lastPlace : idx + 1;
+          lastScore = score;
+          lastPlace = computedPlace;
+          rankedEntries.push({
+            reg,
+            place: computedPlace <= 3 ? (computedPlace as 1 | 2 | 3) : null,
+          });
+        });
+
+        const top3Winners = rankedEntries.filter((e) => e.place !== null);
+        const otherParticipants = rankedEntries.filter((e) => e.place === null);
+        const waitingParticipants = categoryParticipants.filter(
+          (r) => r.participo !== true && typeof r.puntajeTotal !== 'number'
+        );
+
+        const visibleScoringList = categoryParticipants.filter((r) => {
+          const q = contestSearch.trim().toLowerCase();
+          const matchSearch =
+            !q ||
+            r.nombre.toLowerCase().includes(q) ||
+            r.personaje.toLowerCase().includes(q) ||
+            (r.iglesia && r.iglesia.toLowerCase().includes(q));
+          const isScored = r.participo === true || typeof r.puntajeTotal === 'number';
+          const matchStatus =
+            contestFilterStatus === 'all' ||
+            (contestFilterStatus === 'calificados' && isScored) ||
+            (contestFilterStatus === 'pendientes' && !isScored);
+          return matchSearch && matchStatus;
+        });
+
+        const categoryHeading =
+          contestCategoryTab === 'ninos'
+            ? 'Categoría Niños (hasta 17 años)'
+            : contestCategoryTab === 'adultos'
+            ? 'Categoría Adultos (18+ años)'
+            : 'Clasificación General';
+
+        const handleCopyContestResults = async () => {
+          if (rankedEntries.length === 0) {
+            showToast('Aún no hay participantes calificados en esta categoría.');
+            return;
+          }
+          const lines: string[] = [
+            `🏆 RESULTADOS DEL CONCURSO - IMITA TU PERSONAJE BÍBLICO`,
+            `📂 ${categoryHeading}`,
+            `📅 Sábado 28 de noviembre de 2026`,
+            ``,
+            `🥇 GANADORES (1.º AL 3.º LUGAR):`,
+          ];
+
+          top3Winners.forEach(({ reg, place }) => {
+            const medal = place === 1 ? '🥇 1.º Lugar' : place === 2 ? '🥈 2.º Lugar' : '🥉 3.º Lugar';
+            lines.push(
+              `${medal}: ${reg.nombre} (${reg.personaje}${reg.iglesia ? ` · ${reg.iglesia}` : ''}) — ${reg.puntajeTotal ?? 0} pts`
+            );
+          });
+
+          if (otherParticipants.length > 0) {
+            lines.push(``, `📋 DEMÁS PARTICIPANTES (PUNTOS ALCANZADOS):`);
+            otherParticipants.forEach(({ reg }) => {
+              lines.push(
+                `• ${reg.nombre} (${reg.personaje}${reg.iglesia ? ` · ${reg.iglesia}` : ''}) — ${reg.puntajeTotal ?? 0} pts`
+              );
+            });
+          }
+
+          try {
+            await navigator.clipboard.writeText(lines.join('\n'));
+            showToast('¡Resultados oficiales copiados al portapapeles!');
+          } catch {
+            showToast('No se pudo copiar automáticamente.');
+          }
+        };
+
+        const placeStyles: Record<
+          1 | 2 | 3,
+          { label: string; emoji: string; card: string; badge: string; score: string }
+        > = {
+          1: {
+            label: '1.º Lugar',
+            emoji: '🥇',
+            card: 'bg-gradient-to-br from-amber-50 via-yellow-50 to-amber-100/80 dark:from-amber-950/60 dark:via-yellow-950/40 dark:to-amber-900/40 border-2 border-amber-400 dark:border-amber-600 shadow-md',
+            badge: 'bg-amber-500 text-white',
+            score: 'text-amber-700 dark:text-amber-300',
+          },
+          2: {
+            label: '2.º Lugar',
+            emoji: '🥈',
+            card: 'bg-gradient-to-br from-slate-50 via-slate-100 to-slate-200/70 dark:from-slate-800/80 dark:to-slate-900 border-2 border-slate-400 dark:border-slate-500 shadow-sm',
+            badge: 'bg-slate-600 text-white',
+            score: 'text-slate-800 dark:text-slate-200',
+          },
+          3: {
+            label: '3.º Lugar',
+            emoji: '🥉',
+            card: 'bg-gradient-to-br from-orange-50 via-amber-50/70 to-orange-100/70 dark:from-orange-950/50 dark:to-amber-950/40 border-2 border-orange-400 dark:border-orange-700 shadow-sm',
+            badge: 'bg-orange-600 text-white',
+            score: 'text-orange-700 dark:text-orange-300',
+          },
+        };
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200 print:static print:inset-auto print:block print:bg-white print:p-0 print:backdrop-blur-none">
+            <div className="bg-slate-50 dark:bg-slate-950 text-slate-950 dark:text-white border-2 border-indigo-400/50 dark:border-indigo-800 rounded-3xl max-w-7xl w-full h-[94vh] flex flex-col shadow-2xl overflow-hidden print:border-0 print:rounded-none print:max-w-none print:h-auto print:overflow-visible print:shadow-none print:bg-white print:text-slate-950">
+              {/* Top Header */}
+              <div className="no-print bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-3.5 flex flex-col lg:flex-row lg:items-center justify-between gap-3 shrink-0">
+                <div className="flex items-start sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-2xl bg-gradient-to-br from-indigo-600 to-amber-600 text-white shadow-sm shrink-0">
+                      <Trophy className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          En Tiempo Real
+                        </span>
+                        <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                          {scoredRaw.length} de {categoryParticipants.length} calificados
+                        </span>
+                      </div>
+                      <h2 className="text-base sm:text-xl font-black tracking-tight text-slate-950 dark:text-white">
+                        Concurso en Vivo · Puntajes y Ganadores
+                      </h2>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsLiveContestOpen(false)}
+                    className="lg:hidden p-2 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Category Switcher */}
+                  <div className="inline-flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1 border border-slate-300 dark:border-slate-700 text-xs font-extrabold">
+                    <button
+                      type="button"
+                      onClick={() => setContestCategoryTab('ninos')}
+                      className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                        contestCategoryTab === 'ninos'
+                          ? 'bg-sky-600 text-white shadow-xs'
+                          : 'text-slate-700 dark:text-slate-300 hover:bg-white/60 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      Niños ({stats.ninos})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setContestCategoryTab('adultos')}
+                      className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                        contestCategoryTab === 'adultos'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'text-slate-700 dark:text-slate-300 hover:bg-white/60 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      Adultos ({stats.adultos})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setContestCategoryTab('all')}
+                      className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                        contestCategoryTab === 'all'
+                          ? 'bg-amber-600 text-white shadow-xs'
+                          : 'text-slate-700 dark:text-slate-300 hover:bg-white/60 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      Todos ({stats.total})
+                    </button>
+                  </div>
+
+                  {onRefreshRegistrations && (
+                    <button
+                      type="button"
+                      onClick={handleManualRefresh}
+                      disabled={isRefreshing}
+                      className="min-h-[36px] px-3 py-1.5 rounded-xl border border-emerald-400/60 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                      <span className="hidden sm:inline">Sincronizar</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleCopyContestResults}
+                    className="min-h-[36px] px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold text-xs inline-flex items-center gap-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+                  >
+                    <Copy className="w-3.5 h-3.5 text-amber-600" />
+                    <span className="hidden sm:inline">Copiar Resultados</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="min-h-[36px] px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-xs inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Imprimir Ganadores</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsLiveContestOpen(false)}
+                    className="hidden lg:inline-flex p-2 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                    title="Cerrar panel de concurso"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Body Split: Left Scoring / Right Live Winners */}
+              <div className="flex-1 overflow-y-auto lg:overflow-hidden grid grid-cols-1 lg:grid-cols-12 print:block">
+                {/* LEFT COLUMN: CALIFICAR PARTICIPANTES */}
+                <div className="no-print lg:col-span-7 border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-800 flex flex-col lg:h-full lg:overflow-hidden bg-slate-50/70 dark:bg-slate-950">
+                  <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-3 shrink-0">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-sm font-black text-slate-950 dark:text-white flex items-center gap-2">
+                          <Award className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                          <span>Colocar Puntajes · {categoryHeading}</span>
+                        </h3>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          {canScoreContest
+                            ? 'Ingresa los puntos por criterio (30 + 30 + 40) o directamente el total sobre 100 pts.'
+                            : 'Modo solo lectura: un administrador puede colocar puntajes en tiempo real.'}
+                        </p>
+                      </div>
+                      <div className="inline-flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1 border border-slate-200 dark:border-slate-700 text-[11px] font-bold self-start">
+                        <button
+                          type="button"
+                          onClick={() => setContestFilterStatus('all')}
+                          className={`px-2.5 py-1 rounded-lg cursor-pointer ${
+                            contestFilterStatus === 'all'
+                              ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                              : 'text-slate-600 dark:text-slate-400'
+                          }`}
+                        >
+                          Todos ({categoryParticipants.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setContestFilterStatus('pendientes')}
+                          className={`px-2.5 py-1 rounded-lg cursor-pointer ${
+                            contestFilterStatus === 'pendientes'
+                              ? 'bg-amber-600 text-white shadow-xs'
+                              : 'text-slate-600 dark:text-slate-400'
+                          }`}
+                        >
+                          Pendientes ({waitingParticipants.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setContestFilterStatus('calificados')}
+                          className={`px-2.5 py-1 rounded-lg cursor-pointer ${
+                            contestFilterStatus === 'calificados'
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'text-slate-600 dark:text-slate-400'
+                          }`}
+                        >
+                          Calificados ({scoredRaw.length})
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="relative">
+                      <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="Buscar participante por nombre, personaje o iglesia..."
+                        value={contestSearch}
+                        onChange={(e) => setContestSearch(e.target.value)}
+                        className="w-full min-h-[38px] pl-9 pr-4 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex-1 lg:overflow-y-auto p-3 sm:p-4 space-y-3">
+                    {visibleScoringList.length === 0 ? (
+                      <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-800 p-8 text-center text-xs text-slate-500 dark:text-slate-400 space-y-2">
+                        <Trophy className="w-8 h-8 mx-auto text-slate-400" />
+                        <p className="font-bold text-slate-700 dark:text-slate-300">
+                          No hay participantes en esta vista
+                        </p>
+                        <p>Cambia de categoría o limpia el filtro de búsqueda.</p>
+                      </div>
+                    ) : (
+                      visibleScoringList.map((r) => {
+                        const draft = getDraftForReg(r);
+                        const isScored = r.participo === true || typeof r.puntajeTotal === 'number';
+                        const isSaving = savingScoreId === r.id;
+                        const rankMatch = rankedEntries.find((e) => e.reg.id === r.id);
+
+                        return (
+                          <div
+                            key={r.id}
+                            className={`rounded-2xl border-2 p-3.5 sm:p-4 transition-all space-y-3 ${
+                              isScored
+                                ? 'bg-white dark:bg-slate-900 border-emerald-300 dark:border-emerald-800 shadow-xs'
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
+                            }`}
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div className="min-w-0 space-y-0.5">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <h4 className="text-sm font-black text-slate-950 dark:text-white">
+                                    {r.nombre}
+                                  </h4>
+                                  {renderCategoryBadge(r.edad)}
+                                  {r.edad && (
+                                    <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                                      ({r.edad})
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                                  <span className="font-extrabold text-amber-700 dark:text-amber-400 flex items-center gap-1">
+                                    <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                    {r.personaje}
+                                  </span>
+                                  {r.iglesia && (
+                                    <span className="text-slate-600 dark:text-slate-300 font-semibold flex items-center gap-1">
+                                      <Church className="w-3 h-3 text-slate-400" />
+                                      {r.iglesia}
+                                    </span>
+                                  )}
+                                  {r.audio === 'Sí' && (
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 dark:text-blue-400">
+                                      <Volume2 className="w-3 h-3" />
+                                      Audio
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0">
+                                {isScored ? (
+                                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 font-mono">
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                    <span>{r.puntajeTotal ?? 0} pts</span>
+                                    {rankMatch?.place && (
+                                      <span className="ml-0.5 text-[10px] font-extrabold text-amber-700 dark:text-amber-300">
+                                        · {rankMatch.place}.º Lugar
+                                      </span>
+                                    )}
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                    <Clock className="w-3 h-3" />
+                                    <span>En espera</span>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {canScoreContest && (
+                              <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 sm:grid-cols-12 gap-2 items-end">
+                                <div className="sm:col-span-2">
+                                  <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                                    Caract. /30
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={30}
+                                    step="0.5"
+                                    placeholder="0-30"
+                                    value={draft.vest}
+                                    onChange={(e) => handleCriteriaDraftChange(r, 'vest', e.target.value)}
+                                    className="w-full min-h-[36px] px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                  />
+                                </div>
+
+                                <div className="sm:col-span-2">
+                                  <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                                    Actuac. /30
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={30}
+                                    step="0.5"
+                                    placeholder="0-30"
+                                    value={draft.act}
+                                    onChange={(e) => handleCriteriaDraftChange(r, 'act', e.target.value)}
+                                    className="w-full min-h-[36px] px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                  />
+                                </div>
+
+                                <div className="sm:col-span-2">
+                                  <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                                    Fidelid. /40
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={40}
+                                    step="0.5"
+                                    placeholder="0-40"
+                                    value={draft.fid}
+                                    onChange={(e) => handleCriteriaDraftChange(r, 'fid', e.target.value)}
+                                    className="w-full min-h-[36px] px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                  />
+                                </div>
+
+                                <div className="sm:col-span-3">
+                                  <label className="block text-[10px] font-extrabold text-indigo-700 dark:text-indigo-300 mb-1">
+                                    Total /100 pts
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={100}
+                                    step="0.5"
+                                    placeholder="Ej. 95"
+                                    value={draft.total}
+                                    onChange={(e) => handleDirectTotalDraftChange(r, e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleSaveParticipantScore(r);
+                                      }
+                                    }}
+                                    className="w-full min-h-[36px] px-2.5 py-1.5 rounded-xl border-2 border-indigo-400 dark:border-indigo-700 bg-indigo-50/70 dark:bg-indigo-950/40 text-sm font-mono font-black text-indigo-950 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                  />
+                                </div>
+
+                                <div className="col-span-2 sm:col-span-3 flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    disabled={isSaving}
+                                    onClick={() => handleSaveParticipantScore(r)}
+                                    className="flex-1 min-h-[36px] px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs inline-flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-60"
+                                  >
+                                    <Save className="w-3.5 h-3.5 shrink-0" />
+                                    <span>{isSaving ? '...' : isScored ? 'Actualizar' : 'Guardar'}</span>
+                                  </button>
+
+                                  {isScored && (
+                                    <button
+                                      type="button"
+                                      disabled={isSaving}
+                                      onClick={() => handleClearParticipantScore(r)}
+                                      title="Limpiar puntaje de este participante"
+                                      className="min-h-[36px] px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-300 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                                    >
+                                      <RotateCcw className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* RIGHT COLUMN: GANADORES EN VIVO (1.º AL 3.º LUGAR) Y DEMÁS SIN LUGAR */}
+                <div className="lg:col-span-5 flex flex-col lg:h-full lg:overflow-y-auto p-4 sm:p-5 space-y-5 bg-white dark:bg-slate-900 print:p-4">
+                  {/* Printable Header (visible on print and nice header on screen) */}
+                  <div className="border-b border-slate-200 dark:border-slate-800 pb-3 flex items-center justify-between gap-2">
+                    <div>
+                      <span className="text-[11px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                        Tabla Oficial en Vivo
+                      </span>
+                      <h3 className="text-base sm:text-lg font-black text-slate-950 dark:text-white">
+                        🏆 Ganadores · {categoryHeading}
+                      </h3>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 text-xs font-extrabold text-amber-800 dark:text-amber-300 font-mono">
+                      {scoredRaw.length} calificados
+                    </span>
+                  </div>
+
+                  {/* PODIO: 1.º AL 3.º LUGAR */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-extrabold uppercase tracking-wide text-slate-700 dark:text-slate-300">
+                        Podio (1.º al 3.º Lugar)
+                      </span>
+                    </div>
+
+                    {top3Winners.length === 0 ? (
+                      <div className="rounded-2xl border-2 border-dashed border-amber-300/70 dark:border-amber-900/50 bg-amber-50/40 dark:bg-amber-950/10 p-6 text-center space-y-2">
+                        <Trophy className="w-8 h-8 mx-auto text-amber-500" />
+                        <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                          Aún no hay puntajes registrados
+                        </p>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          A medida que vayas guardando los puntajes, el sistema ubicará automáticamente del 1.º al 3.º lugar aquí.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2.5">
+                        {top3Winners.map(({ reg, place }) => {
+                          if (!place) return null;
+                          const style = placeStyles[place];
+                          return (
+                            <div key={reg.id} className={`rounded-2xl p-3.5 sm:p-4 ${style.card}`}>
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0 space-y-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-black uppercase ${style.badge}`}>
+                                      <span>{style.emoji}</span>
+                                      <span>{style.label}</span>
+                                    </span>
+                                    {reg.iglesia && (
+                                      <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                                        {reg.iglesia}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <h4 className="text-sm sm:text-base font-black text-slate-950 dark:text-white truncate">
+                                    {reg.nombre}
+                                  </h4>
+                                  <p className="text-xs font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1">
+                                    <Sparkles className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                    <span className="truncate">{reg.personaje}</span>
+                                  </p>
+                                  {(typeof reg.puntajeCaracterizacion === 'number' ||
+                                    typeof reg.puntajeActuacion === 'number' ||
+                                    typeof reg.puntajeFidelidad === 'number') && (
+                                    <p className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 font-mono">
+                                      Caract: {reg.puntajeCaracterizacion ?? 0} · Act: {reg.puntajeActuacion ?? 0} · Fidel: {reg.puntajeFidelidad ?? 0}
+                                    </p>
+                                  )}
+                                </div>
+
+                                <div className="text-right shrink-0">
+                                  <span className={`block text-2xl sm:text-3xl font-black font-mono leading-none ${style.score}`}>
+                                    {reg.puntajeTotal ?? 0}
+                                  </span>
+                                  <span className="text-[10px] font-extrabold uppercase text-slate-500 dark:text-slate-400">
+                                    puntos
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* DEMÁS PARTICIPANTES DESPUÉS DEL 3.º LUGAR (SIN ASIGNAR LUGAR) */}
+                  {otherParticipants.length > 0 && (
+                    <div className="space-y-2.5 pt-2 border-t border-slate-200 dark:border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-extrabold uppercase tracking-wide text-slate-700 dark:text-slate-300">
+                          Demás Participantes (Puntos Alcanzados)
+                        </span>
+                        <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                          {otherParticipants.length} participante(s)
+                        </span>
+                      </div>
+
+                      <div className="divide-y divide-slate-200 dark:divide-slate-800 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30 overflow-hidden">
+                        {otherParticipants.map(({ reg }) => (
+                          <div
+                            key={reg.id}
+                            className="px-3.5 py-2.5 flex items-center justify-between gap-3"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-xs font-extrabold text-slate-900 dark:text-white truncate">
+                                {reg.nombre}
+                              </p>
+                              <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+                                {reg.personaje}
+                                {reg.iglesia ? ` · ${reg.iglesia}` : ''}
+                              </p>
+                            </div>
+                            <span className="px-2.5 py-1 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs font-black font-mono text-slate-800 dark:text-slate-100 shrink-0">
+                              {reg.puntajeTotal ?? 0} pts
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* EN ESPERA DE PARTICIPAR */}
+                  {waitingParticipants.length > 0 && (
+                    <div className="no-print space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                      <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-400 block">
+                        Por participar ({waitingParticipants.length})
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {waitingParticipants.map((r) => (
+                          <span
+                            key={r.id}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-[11px] font-semibold text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
+                          >
+                            <span>{r.nombre}</span>
+                            <span className="text-slate-400">·</span>
+                            <span className="text-amber-700 dark:text-amber-400 font-bold">{r.personaje}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* MODAL DE PERSONALIZACIÓN DEL ENLACE Y FLYER */}
       {isConfigModalOpen && (

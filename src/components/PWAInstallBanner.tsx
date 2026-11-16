@@ -69,8 +69,13 @@ export const PWAInstallBanner: React.FC<PWAInstallBannerProps> = ({
         >
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center shrink-0">
-                <Smartphone className="w-5 h-5 text-white" />
+              <div className="w-10 h-10 rounded-xl bg-black border border-white/25 overflow-hidden flex items-center justify-center shrink-0">
+                <img
+                  src="/assets/aistudio/a_clean_modern_app_icon_style_graphic_with_a_roun_45278ae7.png"
+                  alt="Eclesia"
+                  referrerPolicy="no-referrer"
+                  className="w-full h-full object-contain scale-[1.06]"
+                />
               </div>
               <div className="min-w-0">
                 <p className="text-xs sm:text-sm font-extrabold tracking-tight text-white leading-snug">

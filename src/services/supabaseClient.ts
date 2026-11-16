@@ -11,7 +11,13 @@ import {
   CamporeeShirtPayment,
   ClubEnrollment,
   BiblicalCharacterRegistration,
-  ContestCustomConfig
+  ContestCustomConfig,
+  YouthGame,
+  YouthGameSession,
+  YouthGamePlayer,
+  normalizeAppUser,
+  normalizeUserRoles,
+  serializeUserRoles
 } from '../types';
 
 export const DEFAULT_SUPABASE_PROJECT_ID = 'ewwtdeypwetvpjjbbgdi';
@@ -48,6 +54,7 @@ export interface ChurchDataPayload {
   clubEnrollments?: ClubEnrollment[];
   biblicalCharacters?: BiblicalCharacterRegistration[];
   contestConfig?: ContestCustomConfig;
+  youthGames?: YouthGame[];
   deletedIds?: Record<string, number>;
 }
 
@@ -129,6 +136,7 @@ function stripDeletedFromPayload(
     camporeeShirts: keep(payload.camporeeShirts),
     clubEnrollments: keep(payload.clubEnrollments),
     biblicalCharacters: keep(payload.biblicalCharacters),
+    youthGames: keep(payload.youthGames),
     deletedIds: deletedMap,
   };
 }
@@ -247,6 +255,40 @@ export function createPublicRegistrationShareUrl(origin?: string): string {
   return url.toString();
 }
 
+/**
+ * Build a self-linking URL for Sociedad de Jóvenes Games (Jugador o Pantalla de Posiciones).
+ */
+export function createPublicGameUrl(
+  roomCode: string,
+  mode: 'player' | 'screen',
+  origin?: string
+): string {
+  if (typeof window === 'undefined') return '';
+  const currentOrigin = origin || window.location.origin;
+  const url = new URL(currentOrigin + window.location.pathname);
+  url.searchParams.set('view', 'jovenes_games');
+  url.searchParams.set('room', roomCode.trim().toUpperCase());
+  url.searchParams.set('mode', mode);
+
+  const config = getSupabaseConfig();
+  if (config.url && config.anonKey) {
+    try {
+      const syncObj = { u: config.url, k: config.anonKey };
+      const rawJson = JSON.stringify(syncObj);
+      const base64 = btoa(unescape(encodeURIComponent(rawJson)))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
+      url.searchParams.set('dbsync', base64);
+    } catch {
+      url.searchParams.set('db_url', config.url);
+      url.searchParams.set('db_key', config.anonKey);
+    }
+  }
+
+  return url.toString();
+}
+
 export function getSupabaseConfig(): SupabaseConfig {
   // Permanent, non-editable database configuration across all PCs and devices
   try {
@@ -276,6 +318,36 @@ export function saveSupabaseConfig(_config?: Partial<SupabaseConfig>) {
 let cachedClient: SupabaseClient | null = null;
 let lastClientKey = '';
 
+export const CLIENT_INSTANCE_ID =
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `client-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
+let lastKnownCloudUpdatedAt: string | null = null;
+
+export function getLastKnownCloudUpdatedAt(): string | null {
+  return lastKnownCloudUpdatedAt;
+}
+
+export function setLastKnownCloudUpdatedAt(ts: string | null | undefined) {
+  if (ts && (!lastKnownCloudUpdatedAt || ts > lastKnownCloudUpdatedAt)) {
+    lastKnownCloudUpdatedAt = ts;
+  }
+}
+
+export interface LiveSyncSignal {
+  senderId: string;
+  action: 'upsert' | 'delete' | 'full_sync';
+  entity?: keyof ChurchDataPayload;
+  deletedIds?: string[];
+  record?: any;
+  updatedAt: string;
+}
+
+let sharedBroadcastChannel: ReturnType<SupabaseClient['channel']> | null = null;
+let isSharedBroadcastSubscribed = false;
+const broadcastListeners = new Set<(signal: LiveSyncSignal) => void>();
+
 export function getSupabaseClient(): SupabaseClient | null {
   const config = getSupabaseConfig();
   if (!config.url || !config.anonKey) {
@@ -288,13 +360,120 @@ export function getSupabaseClient(): SupabaseClient | null {
   }
 
   try {
-    cachedClient = createClient(config.url, config.anonKey);
+    cachedClient = createClient(config.url, config.anonKey, {
+      realtime: {
+        params: {
+          eventsPerSecond: 20,
+        },
+      },
+    });
     lastClientKey = clientKey;
+    sharedBroadcastChannel = null;
+    isSharedBroadcastSubscribed = false;
     return cachedClient;
   } catch (error) {
     console.error('Error al inicializar cliente de Supabase:', error);
     return null;
   }
+}
+
+function ensureSharedBroadcastChannel(): ReturnType<SupabaseClient['channel']> | null {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  if (sharedBroadcastChannel) return sharedBroadcastChannel;
+
+  const channel = client.channel('eclesia-live-sync-v1', {
+    config: {
+      broadcast: { self: false, ack: false },
+    },
+  });
+
+  channel.on('broadcast', { event: 'sync' }, (msg) => {
+    const signal = msg?.payload as LiveSyncSignal | undefined;
+    if (!signal || signal.senderId === CLIENT_INSTANCE_ID) return;
+    setLastKnownCloudUpdatedAt(signal.updatedAt);
+    broadcastListeners.forEach((cb) => {
+      try {
+        cb(signal);
+      } catch (err) {
+        console.warn('Error in live broadcast listener:', err);
+      }
+    });
+  });
+
+  channel.subscribe((status) => {
+    if (status === 'SUBSCRIBED') {
+      isSharedBroadcastSubscribed = true;
+    } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+      isSharedBroadcastSubscribed = false;
+    }
+  });
+
+  sharedBroadcastChannel = channel;
+  return channel;
+}
+
+export function subscribeLiveSyncBroadcast(
+  listener: (signal: LiveSyncSignal) => void
+): () => void {
+  broadcastListeners.add(listener);
+  ensureSharedBroadcastChannel();
+  return () => {
+    broadcastListeners.delete(listener);
+  };
+}
+
+export async function broadcastSyncSignal(
+  partial: Omit<LiveSyncSignal, 'senderId' | 'updatedAt'> & { updatedAt?: string }
+): Promise<void> {
+  try {
+    const channel = ensureSharedBroadcastChannel();
+    if (!channel) return;
+
+    const signal: LiveSyncSignal = {
+      senderId: CLIENT_INSTANCE_ID,
+      updatedAt: partial.updatedAt || new Date().toISOString(),
+      action: partial.action,
+      entity: partial.entity,
+      deletedIds: partial.deletedIds,
+      record: partial.record,
+    };
+
+    if (isSharedBroadcastSubscribed) {
+      await channel.send({
+        type: 'broadcast',
+        event: 'sync',
+        payload: signal,
+      });
+    } else {
+      setTimeout(() => {
+        channel
+          .send({
+            type: 'broadcast',
+            event: 'sync',
+            payload: signal,
+          })
+          .catch(() => {});
+      }, 350);
+    }
+  } catch {}
+}
+
+export async function fetchCloudLastUpdated(): Promise<string | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  try {
+    const { data, error } = await client
+      .from('church_store')
+      .select('updated_at')
+      .eq('id', 'main_church_data')
+      .maybeSingle();
+    if (!error && data?.updated_at) {
+      return data.updated_at as string;
+    }
+  } catch {}
+  return null;
 }
 
 /**
@@ -472,6 +651,27 @@ ALTER TABLE IF EXISTS biblical_characters ALTER COLUMN ensenanza DROP NOT NULL;
 ALTER TABLE IF EXISTS biblical_characters ALTER COLUMN escena SET DEFAULT '';
 ALTER TABLE IF EXISTS biblical_characters ALTER COLUMN ensenanza SET DEFAULT '';
 ALTER TABLE IF EXISTS biblical_characters ADD COLUMN IF NOT EXISTS iglesia TEXT DEFAULT '';
+ALTER TABLE IF EXISTS biblical_characters ADD COLUMN IF NOT EXISTS puntaje_caracterizacion NUMERIC;
+ALTER TABLE IF EXISTS biblical_characters ADD COLUMN IF NOT EXISTS puntaje_actuacion NUMERIC;
+ALTER TABLE IF EXISTS biblical_characters ADD COLUMN IF NOT EXISTS puntaje_fidelidad NUMERIC;
+ALTER TABLE IF EXISTS biblical_characters ADD COLUMN IF NOT EXISTS puntaje_total NUMERIC;
+ALTER TABLE IF EXISTS biblical_characters ADD COLUMN IF NOT EXISTS participo BOOLEAN DEFAULT false;
+ALTER TABLE IF EXISTS biblical_characters ADD COLUMN IF NOT EXISTS calificado_por TEXT DEFAULT '';
+ALTER TABLE IF EXISTS biblical_characters ADD COLUMN IF NOT EXISTS calificado_at TEXT DEFAULT '';
+
+-- 12. SUBMENÚ: Sociedad de Jóvenes Games (Cuestionarios y Juegos en Vivo)
+CREATE TABLE IF NOT EXISTS youth_games (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  kind TEXT NOT NULL DEFAULT 'quiz_preguntas',
+  icon_emoji TEXT DEFAULT '🎮',
+  color_theme TEXT DEFAULT 'purple',
+  questions JSONB DEFAULT '[]'::jsonb,
+  created_by TEXT DEFAULT '',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
 
 -- HABILITAR SEGURIDAD RLS EN TODAS LAS TABLAS
 ALTER TABLE attendees ENABLE ROW LEVEL SECURITY;
@@ -485,13 +685,14 @@ ALTER TABLE app_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE church_store ENABLE ROW LEVEL SECURITY;
 ALTER TABLE church_photos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE biblical_characters ENABLE ROW LEVEL SECURITY;
+ALTER TABLE youth_games ENABLE ROW LEVEL SECURITY;
 
 -- CREAR POLÍTICAS DE LECTURA Y ESCRITURA PÚBLICAS (ANON KEY)
 DO $$
 DECLARE
   tbl text;
 BEGIN
-  FOR tbl IN SELECT unnest(ARRAY['attendees', 'church_events', 'clubs', 'club_activities', 'club_transactions', 'camporee_shirts', 'club_enrollments', 'app_users', 'church_store', 'church_photos', 'biblical_characters'])
+  FOR tbl IN SELECT unnest(ARRAY['attendees', 'church_events', 'clubs', 'club_activities', 'club_transactions', 'camporee_shirts', 'club_enrollments', 'app_users', 'church_store', 'church_photos', 'biblical_characters', 'youth_games'])
   LOOP
     EXECUTE format('DROP POLICY IF EXISTS "Public select on %I" ON %I;', tbl, tbl);
     EXECUTE format('CREATE POLICY "Public select on %I" ON %I FOR SELECT USING (true);', tbl, tbl);
@@ -504,6 +705,12 @@ BEGIN
 
     EXECUTE format('DROP POLICY IF EXISTS "Public delete on %I" ON %I;', tbl, tbl);
     EXECUTE format('CREATE POLICY "Public delete on %I" ON %I FOR DELETE USING (true);', tbl, tbl);
+
+    BEGIN
+      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE %I;', tbl);
+    EXCEPTION WHEN OTHERS THEN
+      NULL;
+    END;
   END LOOP;
 END $$;
 `;
@@ -517,6 +724,7 @@ export const REQUIRED_DATABASE_TABLES = [
   { name: 'camporee_shirts', label: 'T-Shirts de Camporee', submenu: 'Clubes / Finanzas T-Shirts' },
   { name: 'club_enrollments', label: 'Matrículas de Clubes', submenu: 'Clubes / Matrícula' },
   { name: 'biblical_characters', label: 'Imita tu Personaje Bíblico', submenu: 'Eventos / Personaje Bíblico' },
+  { name: 'youth_games', label: 'Sociedad de Jóvenes Games', submenu: 'Juegos / Cuestionarios en Vivo' },
   { name: 'church_photos', label: 'Fotos y Galería Eclesiástica', submenu: 'Fotos / Galería Pública' },
   { name: 'app_users', label: 'Usuarios y Perfiles (Roles)', submenu: 'Administración de Usuarios' },
   { name: 'church_store', label: 'Almacén Global y Zonas', submenu: 'Sincronización Unificada' },
@@ -666,13 +874,14 @@ export async function pushDataToSupabase(payload: ChurchDataPayload): Promise<{ 
     const cleanPayload = stripDeletedFromPayload(payload, mergedDeleted);
 
     // 1. Always save atomic snapshot in church_store for instant backup integrity
+    const nowIso = new Date().toISOString();
     const { error: storeError } = await client
       .from('church_store')
       .upsert(
         {
           id: 'main_church_data',
           data: cleanPayload,
-          updated_at: new Date().toISOString(),
+          updated_at: nowIso,
         },
         { onConflict: 'id' }
       );
@@ -811,15 +1020,15 @@ export async function pushDataToSupabase(payload: ChurchDataPayload): Promise<{ 
           name: u.name,
           email: u.email,
           password: u.password,
-          role: u.role,
+          role: serializeUserRoles(u),
           last_login: u.lastLogin || null,
         }));
         await client.from('app_users').upsert(userRecords, { onConflict: 'id' });
       }
 
-      // Sync Biblical Characters Contest Contest Registrations
+      // Sync Biblical Characters Contest Registrations
       if (cleanPayload.biblicalCharacters && cleanPayload.biblicalCharacters.length > 0) {
-        const characterRecords = cleanPayload.biblicalCharacters.map((b) => ({
+        const characterRecordsWithScores = cleanPayload.biblicalCharacters.map((b) => ({
           id: b.id,
           nombre: b.nombre,
           edad: b.edad || '',
@@ -833,8 +1042,51 @@ export async function pushDataToSupabase(payload: ChurchDataPayload): Promise<{ 
           fecha: b.fecha,
           aprobado: !!b.aprobado,
           notas_organizador: b.notasOrganizador || '',
+          puntaje_caracterizacion: typeof b.puntajeCaracterizacion === 'number' ? b.puntajeCaracterizacion : null,
+          puntaje_actuacion: typeof b.puntajeActuacion === 'number' ? b.puntajeActuacion : null,
+          puntaje_fidelidad: typeof b.puntajeFidelidad === 'number' ? b.puntajeFidelidad : null,
+          puntaje_total: typeof b.puntajeTotal === 'number' ? b.puntajeTotal : null,
+          participo: !!b.participo,
+          calificado_por: b.calificadoPor || '',
+          calificado_at: b.calificadoAt || '',
         }));
-        await client.from('biblical_characters').upsert(characterRecords, { onConflict: 'id' });
+        const { error: charErr } = await client
+          .from('biblical_characters')
+          .upsert(characterRecordsWithScores, { onConflict: 'id' });
+        if (charErr) {
+          const baseCharRecords = cleanPayload.biblicalCharacters.map((b) => ({
+            id: b.id,
+            nombre: b.nombre,
+            edad: b.edad || '',
+            contacto: b.contacto,
+            iglesia: b.iglesia || '',
+            personaje: b.personaje,
+            escena: b.escena || '',
+            utileria: b.utileria || '',
+            audio: b.audio || 'No',
+            ensenanza: b.ensenanza || '',
+            fecha: b.fecha,
+            aprobado: !!b.aprobado,
+            notas_organizador: b.notasOrganizador || '',
+          }));
+          await client.from('biblical_characters').upsert(baseCharRecords, { onConflict: 'id' });
+        }
+      }
+
+      if (cleanPayload.youthGames && cleanPayload.youthGames.length > 0) {
+        const gameRecords = cleanPayload.youthGames.map((g) => ({
+          id: g.id,
+          title: g.title,
+          description: g.description || '',
+          kind: g.kind || 'quiz_preguntas',
+          icon_emoji: g.iconEmoji || '🎮',
+          color_theme: g.colorTheme || 'purple',
+          questions: g.questions || [],
+          created_by: g.createdBy || '',
+          created_at: g.createdAt || new Date().toISOString(),
+          updated_at: g.updatedAt || new Date().toISOString(),
+        }));
+        await client.from('youth_games').upsert(gameRecords, { onConflict: 'id' });
       }
 
       // 3. Sync Photos to church_photos table in batches of 5
@@ -872,6 +1124,9 @@ export async function pushDataToSupabase(payload: ChurchDataPayload): Promise<{ 
       }
       return { success: false, message: storeError.message };
     }
+
+    setLastKnownCloudUpdatedAt(nowIso);
+    broadcastSyncSignal({ action: 'full_sync', updatedAt: nowIso }).catch(() => {});
 
     return { 
       success: true, 
@@ -983,6 +1238,13 @@ export async function pullDataFromSupabase(): Promise<{
             fecha: row.fecha,
             aprobado: !!row.aprobado,
             notasOrganizador: row.notas_organizador || '',
+            ...(typeof row.puntaje_caracterizacion === 'number' ? { puntajeCaracterizacion: row.puntaje_caracterizacion } : {}),
+            ...(typeof row.puntaje_actuacion === 'number' ? { puntajeActuacion: row.puntaje_actuacion } : {}),
+            ...(typeof row.puntaje_fidelidad === 'number' ? { puntajeFidelidad: row.puntaje_fidelidad } : {}),
+            ...(typeof row.puntaje_total === 'number' ? { puntajeTotal: row.puntaje_total } : {}),
+            ...(typeof row.participo === 'boolean' ? { participo: row.participo } : {}),
+            ...(row.calificado_por ? { calificadoPor: row.calificado_por } : {}),
+            ...(row.calificado_at ? { calificadoAt: row.calificado_at } : {}),
           }));
 
         if (!pulledPayload) {
@@ -1010,6 +1272,13 @@ export async function pullDataFromSupabase(): Promise<{
               ...prev,
               ...c,
               iglesia: c.iglesia || prev?.iglesia || '',
+              puntajeCaracterizacion: c.puntajeCaracterizacion ?? prev?.puntajeCaracterizacion,
+              puntajeActuacion: c.puntajeActuacion ?? prev?.puntajeActuacion,
+              puntajeFidelidad: c.puntajeFidelidad ?? prev?.puntajeFidelidad,
+              puntajeTotal: c.puntajeTotal ?? prev?.puntajeTotal,
+              participo: c.participo ?? prev?.participo,
+              calificadoPor: c.calificadoPor ?? prev?.calificadoPor,
+              calificadoAt: c.calificadoAt ?? prev?.calificadoAt,
             });
           });
           pulledPayload.biblicalCharacters = Array.from(existingMap.values());
@@ -1137,6 +1406,56 @@ export async function pullDataFromSupabase(): Promise<{
       console.warn('Could not read from camporee_shirts table:', shirtErr);
     }
 
+    // 2.8 Query youth_games directly so quizzes created on other devices sync reliably
+    try {
+      const { data: gamesData, error: gamesError } = await client
+        .from('youth_games')
+        .select('*')
+        .order('updated_at', { ascending: false });
+
+      if (!gamesError && Array.isArray(gamesData)) {
+        const mappedGames: YouthGame[] = gamesData
+          .filter((row: any) => row && row.id && !deletedMap[row.id])
+          .map((row: any) => ({
+            id: row.id,
+            title: row.title,
+            description: row.description || '',
+            kind: row.kind || 'quiz_preguntas',
+            iconEmoji: row.icon_emoji || '🎮',
+            colorTheme: row.color_theme || 'purple',
+            questions: Array.isArray(row.questions) ? row.questions : [],
+            createdBy: row.created_by || undefined,
+            createdAt: row.created_at || new Date().toISOString(),
+            updatedAt: row.updated_at || new Date().toISOString(),
+          }));
+
+        if (pulledPayload) {
+          const existingMap = new Map<string, YouthGame>();
+          (pulledPayload.youthGames || []).forEach((g) => {
+            if (g && g.id && !deletedMap[g.id]) {
+              existingMap.set(g.id, g);
+            }
+          });
+          mappedGames.forEach((g) => {
+            const prev = existingMap.get(g.id);
+            if (!prev || (g.updatedAt && prev.updatedAt && g.updatedAt >= prev.updatedAt)) {
+              existingMap.set(g.id, g);
+            }
+          });
+          pulledPayload.youthGames = Array.from(existingMap.values());
+        } else if (mappedGames.length > 0) {
+          pulledPayload = {
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            attendees: [],
+            events: [],
+            zones: [],
+            youthGames: mappedGames,
+          };
+        }
+      }
+    } catch {}
+
     // 3. Fallback: If church_store was empty, try reading relational tables
     if (!pulledPayload) {
       try {
@@ -1252,15 +1571,19 @@ export async function pullDataFromSupabase(): Promise<{
               medicalNotes: row.medical_notes || undefined,
               createdAt: row.created_at || new Date().toISOString(),
             })),
-            users: (userRes.data || []).map((row: any) => ({
-              id: row.id,
-              name: row.name,
-              email: row.email,
-              password: row.password,
-              role: row.role,
-              createdAt: row.created_at || new Date().toISOString(),
-              lastLogin: row.last_login || undefined,
-            })),
+            users: (userRes.data || []).map((row: any) => {
+              const parsedRoles = normalizeUserRoles(row.role, row.roles);
+              return {
+                id: row.id,
+                name: row.name,
+                email: row.email,
+                password: row.password,
+                role: parsedRoles[0],
+                roles: parsedRoles,
+                createdAt: row.created_at || new Date().toISOString(),
+                lastLogin: row.last_login || undefined,
+              };
+            }),
           };
         }
       } catch (relFallbackErr) {
@@ -1276,6 +1599,12 @@ export async function pullDataFromSupabase(): Promise<{
     }
 
     const sanitizedPayload = stripDeletedFromPayload(pulledPayload, deletedMap);
+    if (Array.isArray(sanitizedPayload.users)) {
+      sanitizedPayload.users = sanitizedPayload.users.map(normalizeAppUser);
+    }
+    if (updatedAtStr) {
+      setLastKnownCloudUpdatedAt(updatedAtStr);
+    }
     const timestamp = updatedAtStr ? new Date(updatedAtStr).toLocaleString('es-ES') : 'recientemente';
     return {
       success: true,
@@ -1309,9 +1638,9 @@ export async function registerBiblicalCharacterOnline(
   let storeSaved = false;
   let errorDetail = '';
 
-  // 1. Direct upsert into relational table 'biblical_characters'
+  // 1. Direct upsert into relational table 'biblical_characters' (with safe score-column fallback)
   try {
-    const record = {
+    const baseRecord = {
       id: reg.id,
       nombre: reg.nombre,
       edad: reg.edad || '',
@@ -1326,12 +1655,27 @@ export async function registerBiblicalCharacterOnline(
       aprobado: !!reg.aprobado,
       notas_organizador: reg.notasOrganizador || '',
     };
-    const { error } = await client.from('biblical_characters').upsert(record, { onConflict: 'id' });
+    const recordWithScores = {
+      ...baseRecord,
+      puntaje_caracterizacion: typeof reg.puntajeCaracterizacion === 'number' ? reg.puntajeCaracterizacion : null,
+      puntaje_actuacion: typeof reg.puntajeActuacion === 'number' ? reg.puntajeActuacion : null,
+      puntaje_fidelidad: typeof reg.puntajeFidelidad === 'number' ? reg.puntajeFidelidad : null,
+      puntaje_total: typeof reg.puntajeTotal === 'number' ? reg.puntajeTotal : null,
+      participo: !!reg.participo,
+      calificado_por: reg.calificadoPor || '',
+      calificado_at: reg.calificadoAt || '',
+    };
+    const { error } = await client.from('biblical_characters').upsert(recordWithScores, { onConflict: 'id' });
     if (!error) {
       tableSaved = true;
     } else {
-      console.warn('Upsert en biblical_characters falló:', error);
-      errorDetail = error.message;
+      const { error: fallbackError } = await client.from('biblical_characters').upsert(baseRecord, { onConflict: 'id' });
+      if (!fallbackError) {
+        tableSaved = true;
+      } else {
+        console.warn('Upsert en biblical_characters falló:', fallbackError);
+        errorDetail = fallbackError.message;
+      }
     }
   } catch (err: any) {
     console.warn('Error en biblical_characters table:', err);
@@ -1389,6 +1733,14 @@ export async function registerBiblicalCharacterOnline(
   }
 
   if (tableSaved || storeSaved) {
+    const nowIso = new Date().toISOString();
+    setLastKnownCloudUpdatedAt(nowIso);
+    broadcastSyncSignal({
+      action: 'upsert',
+      entity: 'biblicalCharacters',
+      record: reg,
+      updatedAt: nowIso,
+    }).catch(() => {});
     return {
       success: true,
       message: '¡Inscripción registrada y guardada con éxito en la base de datos!'
@@ -1474,6 +1826,18 @@ export async function fetchBiblicalCharactersOnline(): Promise<{
             fecha: row.fecha,
             aprobado: !!row.aprobado,
             notasOrganizador: row.notas_organizador || '',
+            puntajeCaracterizacion:
+              typeof row.puntaje_caracterizacion === 'number' ? row.puntaje_caracterizacion : prev?.puntajeCaracterizacion,
+            puntajeActuacion:
+              typeof row.puntaje_actuacion === 'number' ? row.puntaje_actuacion : prev?.puntajeActuacion,
+            puntajeFidelidad:
+              typeof row.puntaje_fidelidad === 'number' ? row.puntaje_fidelidad : prev?.puntajeFidelidad,
+            puntajeTotal:
+              typeof row.puntaje_total === 'number' ? row.puntaje_total : prev?.puntajeTotal,
+            participo:
+              typeof row.participo === 'boolean' ? row.participo : prev?.participo,
+            calificadoPor: row.calificado_por || prev?.calificadoPor,
+            calificadoAt: row.calificado_at || prev?.calificadoAt,
           });
         });
       }
@@ -1592,6 +1956,14 @@ export async function deleteRecordOnline(
   }
 
   if (tableDeleted || storeUpdated) {
+    const nowIso = new Date().toISOString();
+    setLastKnownCloudUpdatedAt(nowIso);
+    broadcastSyncSignal({
+      action: 'delete',
+      entity: storeArrayKey,
+      deletedIds: [id],
+      updatedAt: nowIso,
+    }).catch(() => {});
     return { success: true, message: 'Eliminado permanentemente en tiempo real de la base de datos.' };
   }
   return { success: false, message: errorDetail || 'No se pudo eliminar en Supabase.' };
@@ -1633,6 +2005,7 @@ export async function deleteClubCascadeOnline(clubId: string): Promise<{ success
         mergeDeletedIds(localTombstones, recordLocalDeletedIds(relatedIds), d.deletedIds)
       );
 
+      const nowIso = new Date().toISOString();
       await client
         .from('church_store')
         .update({
@@ -1645,9 +2018,20 @@ export async function deleteClubCascadeOnline(clubId: string): Promise<{ success
             camporeeShirts: (d.camporeeShirts || []).filter((s: any) => s.clubId !== clubId),
             clubEnrollments: (d.clubEnrollments || []).filter((e: any) => e.clubId !== clubId),
           },
-          updated_at: new Date().toISOString(),
+          updated_at: nowIso,
         })
         .eq('id', 'main_church_data');
+      setLastKnownCloudUpdatedAt(nowIso);
+      broadcastSyncSignal({
+        action: 'delete',
+        deletedIds: relatedIds,
+        updatedAt: nowIso,
+      }).catch(() => {});
+    } else {
+      broadcastSyncSignal({
+        action: 'delete',
+        deletedIds: [clubId],
+      }).catch(() => {});
     }
 
     return { success: true, message: 'Club eliminado en tiempo real.' };
@@ -1686,6 +2070,7 @@ export async function deleteActivityCascadeOnline(activityId: string): Promise<{
         mergeDeletedIds(localTombstones, recordLocalDeletedIds(relatedIds), d.deletedIds)
       );
 
+      const nowIso = new Date().toISOString();
       await client
         .from('church_store')
         .update({
@@ -1695,9 +2080,20 @@ export async function deleteActivityCascadeOnline(activityId: string): Promise<{
             clubActivities: (d.clubActivities || []).filter((a: any) => a.id !== activityId),
             clubTransactions: (d.clubTransactions || []).filter((t: any) => t.activityId !== activityId),
           },
-          updated_at: new Date().toISOString(),
+          updated_at: nowIso,
         })
         .eq('id', 'main_church_data');
+      setLastKnownCloudUpdatedAt(nowIso);
+      broadcastSyncSignal({
+        action: 'delete',
+        deletedIds: relatedIds,
+        updatedAt: nowIso,
+      }).catch(() => {});
+    } else {
+      broadcastSyncSignal({
+        action: 'delete',
+        deletedIds: [activityId],
+      }).catch(() => {});
     }
 
     return { success: true, message: 'Actividad eliminada en tiempo real.' };
@@ -1723,6 +2119,7 @@ async function mergeSingleItemIntoChurchStore<T extends { id: string }>(
       .eq('id', 'main_church_data')
       .maybeSingle();
 
+    const nowIso = new Date().toISOString();
     if (!readErr && storeRow && storeRow.data) {
       const existingList: T[] = Array.isArray(storeRow.data[storeArrayKey])
         ? (storeRow.data[storeArrayKey] as T[])
@@ -1735,9 +2132,10 @@ async function mergeSingleItemIntoChurchStore<T extends { id: string }>(
             ...storeRow.data,
             [storeArrayKey]: updatedList,
           },
-          updated_at: new Date().toISOString(),
+          updated_at: nowIso,
         })
         .eq('id', 'main_church_data');
+      if (!writeErr) setLastKnownCloudUpdatedAt(nowIso);
       return !writeErr;
     } else if (!readErr) {
       const { error: upsertErr } = await client
@@ -1747,16 +2145,17 @@ async function mergeSingleItemIntoChurchStore<T extends { id: string }>(
             id: 'main_church_data',
             data: {
               version: 1,
-              exportedAt: new Date().toISOString(),
+              exportedAt: nowIso,
               attendees: [],
               events: [],
               zones: [],
               [storeArrayKey]: [item],
             },
-            updated_at: new Date().toISOString(),
+            updated_at: nowIso,
           },
           { onConflict: 'id' }
         );
+      if (!upsertErr) setLastKnownCloudUpdatedAt(nowIso);
       return !upsertErr;
     }
   } catch (err) {
@@ -1809,6 +2208,11 @@ export async function saveClubEnrollmentOnline(
 
   const storeOk = await mergeSingleItemIntoChurchStore('clubEnrollments', enrollment);
   if (tableOk || storeOk) {
+    broadcastSyncSignal({
+      action: 'upsert',
+      entity: 'clubEnrollments',
+      record: enrollment,
+    }).catch(() => {});
     return { success: true, message: 'Matrícula guardada en tiempo real.' };
   }
   return { success: false, message: errorMsg || 'No se pudo guardar la matrícula.' };
@@ -1855,6 +2259,11 @@ export async function saveCamporeeShirtOnline(
 
   const storeOk = await mergeSingleItemIntoChurchStore('camporeeShirts', shirt);
   if (tableOk || storeOk) {
+    broadcastSyncSignal({
+      action: 'upsert',
+      entity: 'camporeeShirts',
+      record: shirt,
+    }).catch(() => {});
     return { success: true, message: 'Pedido de T-Shirt guardado en tiempo real.' };
   }
   return { success: false, message: errorMsg || 'No se pudo guardar la T-Shirt.' };
@@ -1899,6 +2308,13 @@ export async function saveClubOnline(
   } catch {}
 
   const storeOk = await mergeSingleItemIntoChurchStore('clubs', club);
+  if (tableOk || storeOk) {
+    broadcastSyncSignal({
+      action: 'upsert',
+      entity: 'clubs',
+      record: club,
+    }).catch(() => {});
+  }
   return {
     success: tableOk || storeOk,
     message: tableOk || storeOk ? 'Club guardado en tiempo real.' : 'Error guardando club.',
@@ -1933,6 +2349,13 @@ export async function saveClubActivityOnline(
   } catch {}
 
   const storeOk = await mergeSingleItemIntoChurchStore('clubActivities', act);
+  if (tableOk || storeOk) {
+    broadcastSyncSignal({
+      action: 'upsert',
+      entity: 'clubActivities',
+      record: act,
+    }).catch(() => {});
+  }
   return {
     success: tableOk || storeOk,
     message: tableOk || storeOk ? 'Actividad guardada en tiempo real.' : 'Error guardando actividad.',
@@ -1972,9 +2395,591 @@ export async function saveClubTransactionOnline(
   } catch {}
 
   const storeOk = await mergeSingleItemIntoChurchStore('clubTransactions', tx);
+  if (tableOk || storeOk) {
+    broadcastSyncSignal({
+      action: 'upsert',
+      entity: 'clubTransactions',
+      record: tx,
+    }).catch(() => {});
+  }
   return {
     success: tableOk || storeOk,
     message: tableOk || storeOk ? 'Movimiento guardado en tiempo real.' : 'Error guardando movimiento.',
   };
 }
+
+/**
+ * Real-time save of an Attendee (register, edit, attendance toggle) into attendees table and church_store.
+ */
+export async function saveAttendeeOnline(
+  attendee: Attendee
+): Promise<{ success: boolean; message: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, message: 'No hay conexión con Supabase.' };
+
+  let tableOk = false;
+  try {
+    const { error } = await client.from('attendees').upsert(
+      {
+        id: attendee.id,
+        first_name: attendee.firstName,
+        last_name: attendee.lastName,
+        phone: attendee.phone || '',
+        zone: attendee.zone || '',
+        type: attendee.type,
+        registered_date: attendee.registeredDate,
+        notes: attendee.notes || '',
+        prayer_request: attendee.prayerRequest || '',
+        attendance: attendee.attendance || {},
+      },
+      { onConflict: 'id' }
+    );
+    if (!error) tableOk = true;
+  } catch {}
+
+  const storeOk = await mergeSingleItemIntoChurchStore('attendees', attendee);
+  if (tableOk || storeOk) {
+    broadcastSyncSignal({
+      action: 'upsert',
+      entity: 'attendees',
+      record: attendee,
+    }).catch(() => {});
+  }
+  return {
+    success: tableOk || storeOk,
+    message: tableOk || storeOk ? 'Asistente guardado en tiempo real.' : 'Error guardando asistente.',
+  };
+}
+
+/**
+ * Real-time save of a ChurchEvent (create or toggle attendance) into church_events table and church_store.
+ */
+export async function saveEventOnline(
+  evt: ChurchEvent
+): Promise<{ success: boolean; message: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, message: 'No hay conexión con Supabase.' };
+
+  let tableOk = false;
+  try {
+    const { error } = await client.from('church_events').upsert(
+      {
+        id: evt.id,
+        title: evt.title,
+        category: evt.category,
+        date: evt.date,
+        time: evt.time,
+        location: evt.location || 'Auditorio Principal',
+        speaker: evt.speaker || '',
+        description: evt.description || '',
+        attendees: evt.attendees || [],
+      },
+      { onConflict: 'id' }
+    );
+    if (!error) tableOk = true;
+  } catch {}
+
+  const storeOk = await mergeSingleItemIntoChurchStore('events', evt);
+  if (tableOk || storeOk) {
+    broadcastSyncSignal({
+      action: 'upsert',
+      entity: 'events',
+      record: evt,
+    }).catch(() => {});
+  }
+  return {
+    success: tableOk || storeOk,
+    message: tableOk || storeOk ? 'Evento guardado en tiempo real.' : 'Error guardando evento.',
+  };
+}
+
+/**
+ * Real-time save of Photos into church_photos table and broadcasts full_sync.
+ */
+export async function savePhotosOnline(
+  photos: ChurchPhoto[]
+): Promise<{ success: boolean; message: string }> {
+  const client = getSupabaseClient();
+  if (!client || !photos.length) {
+    return { success: false, message: 'No hay conexión o fotos.' };
+  }
+
+  let tableOk = false;
+  try {
+    const photoRecords = photos.map((p) => ({
+      id: p.id,
+      title: p.title,
+      album: p.album || 'Culto de Adoración',
+      date: p.date,
+      image_url: p.imageUrl,
+      thumbnail_url: p.thumbnailUrl || null,
+      uploaded_by: p.uploadedBy || '',
+      uploaded_at: p.uploadedAt || new Date().toISOString(),
+      description: p.description || '',
+      tags: p.tags || [],
+    }));
+    const { error } = await client.from('church_photos').upsert(photoRecords, { onConflict: 'id' });
+    if (!error) tableOk = true;
+  } catch {}
+
+  for (const photo of photos) {
+    await mergeSingleItemIntoChurchStore('photos', photo);
+  }
+
+  broadcastSyncSignal({ action: 'full_sync' }).catch(() => {});
+  return {
+    success: tableOk,
+    message: tableOk ? 'Fotos guardadas en tiempo real.' : 'Fotos sincronizadas en respaldo.',
+  };
+}
+
+/**
+ * Real-time save of an AppUser into app_users table and church_store.
+ */
+export async function saveUserOnline(
+  user: AppUser
+): Promise<{ success: boolean; message: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, message: 'No hay conexión con Supabase.' };
+
+  const normalizedUser = normalizeAppUser(user);
+  let tableOk = false;
+  try {
+    const { error } = await client.from('app_users').upsert(
+      {
+        id: normalizedUser.id,
+        name: normalizedUser.name,
+        email: normalizedUser.email,
+        password: normalizedUser.password,
+        role: serializeUserRoles(normalizedUser),
+        last_login: normalizedUser.lastLogin || null,
+      },
+      { onConflict: 'id' }
+    );
+    if (!error) tableOk = true;
+  } catch {}
+
+  const storeOk = await mergeSingleItemIntoChurchStore('users', normalizedUser);
+  if (tableOk || storeOk) {
+    broadcastSyncSignal({
+      action: 'upsert',
+      entity: 'users',
+      record: normalizedUser,
+    }).catch(() => {});
+  }
+  return {
+    success: tableOk || storeOk,
+    message: tableOk || storeOk ? 'Usuario guardado en tiempo real.' : 'Error guardando usuario.',
+  };
+}
+
+// ============================================================
+// SOCIEDAD DE JÓVENES GAMES - REAL-TIME QUIZIZZ MULTIPLAYER SYNC
+// ============================================================
+
+export async function saveYouthGameOnline(
+  game: YouthGame
+): Promise<{ success: boolean; message: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, message: 'No hay conexión con Supabase.' };
+
+  let tableOk = false;
+  try {
+    const { error } = await client.from('youth_games').upsert(
+      {
+        id: game.id,
+        title: game.title,
+        description: game.description || '',
+        kind: game.kind,
+        icon_emoji: game.iconEmoji || '🎮',
+        color_theme: game.colorTheme || 'purple',
+        questions: game.questions || [],
+        created_by: game.createdBy || '',
+        created_at: game.createdAt || new Date().toISOString(),
+        updated_at: game.updatedAt || new Date().toISOString(),
+      },
+      { onConflict: 'id' }
+    );
+    if (!error) tableOk = true;
+  } catch {}
+
+  const storeOk = await mergeSingleItemIntoChurchStore('youthGames', game);
+  if (tableOk || storeOk) {
+    broadcastSyncSignal({
+      action: 'upsert',
+      entity: 'youthGames',
+      record: game,
+    }).catch(() => {});
+  }
+
+  return {
+    success: tableOk || storeOk,
+    message: tableOk || storeOk ? 'Juego guardado en tiempo real.' : 'Error guardando juego.',
+  };
+}
+
+export async function deleteYouthGameOnline(
+  gameId: string
+): Promise<{ success: boolean; message: string }> {
+  return deleteRecordOnline('youth_games', gameId, 'youthGames');
+}
+
+export interface GameRoomSignal {
+  senderId: string;
+  type: 'session_update' | 'player_update';
+  session?: YouthGameSession;
+  player?: YouthGamePlayer;
+  updatedAt: string;
+}
+
+/**
+ * Save live game session state into church_store (both game_session_<id> and room code index game_room_<code>)
+ * and broadcast immediately in parallel to all connected phones and the projector leaderboard screen.
+ */
+export async function saveGameSessionOnline(
+  session: YouthGameSession
+): Promise<{ success: boolean; message: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, message: 'Sin conexión a Supabase.' };
+
+  const nowIso = new Date().toISOString();
+  const payloadSession: YouthGameSession = { ...session, updatedAt: nowIso };
+  const roomKey = session.roomCode.trim().toUpperCase();
+
+  // Fire instant WebSocket broadcast immediately in parallel with DB persistence
+  // so phones & "Otra Pantalla" update in <100ms without waiting for 2 DB roundtrips.
+  const broadcastPromise = broadcastGameRoomSignal(roomKey, {
+    type: 'session_update',
+    session: payloadSession,
+  });
+
+  try {
+    const [sessRes, roomRes] = await Promise.all([
+      client.from('church_store').upsert(
+        {
+          id: `game_session_${session.id}`,
+          data: payloadSession,
+          updated_at: nowIso,
+        },
+        { onConflict: 'id' }
+      ),
+      client.from('church_store').upsert(
+        {
+          id: `game_room_${roomKey}`,
+          data: { sessionId: session.id, roomCode: roomKey, updatedAt: nowIso },
+          updated_at: nowIso,
+        },
+        { onConflict: 'id' }
+      ),
+    ]);
+
+    await broadcastPromise;
+
+    if (sessRes.error && roomRes.error) {
+      return { success: false, message: sessRes.error.message };
+    }
+
+    return { success: true, message: 'Sesión de juego actualizada en vivo.' };
+  } catch (err: any) {
+    await broadcastPromise.catch(() => {});
+    return { success: false, message: err?.message || 'Error guardando partida en vivo.' };
+  }
+}
+
+export async function fetchGameSessionByRoom(
+  roomCode: string
+): Promise<YouthGameSession | null> {
+  autoLinkSupabaseFromUrl();
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  const cleanRoom = roomCode.trim().toUpperCase();
+  if (!cleanRoom) return null;
+
+  try {
+    const { data: roomRow } = await client
+      .from('church_store')
+      .select('data')
+      .eq('id', `game_room_${cleanRoom}`)
+      .maybeSingle();
+
+    const sessionId = roomRow?.data?.sessionId;
+    if (sessionId) {
+      const { data: sessRow } = await client
+        .from('church_store')
+        .select('data')
+        .eq('id', `game_session_${sessionId}`)
+        .maybeSingle();
+      if (sessRow?.data) {
+        return sessRow.data as YouthGameSession;
+      }
+    }
+
+    // Fallback search across game_session_% rows
+    const { data: fallbackRows } = await client
+      .from('church_store')
+      .select('data, updated_at')
+      .like('id', 'game_session_%')
+      .order('updated_at', { ascending: false })
+      .limit(20);
+
+    if (Array.isArray(fallbackRows)) {
+      const found = fallbackRows.find(
+        (r: any) => String(r?.data?.roomCode || '').toUpperCase() === cleanRoom
+      );
+      if (found?.data) return found.data as YouthGameSession;
+    }
+  } catch (err) {
+    console.warn('Error fetching game session by room:', err);
+  }
+  return null;
+}
+
+export async function fetchGameSessionById(
+  sessionId: string
+): Promise<YouthGameSession | null> {
+  const client = getSupabaseClient();
+  if (!client || !sessionId) return null;
+  try {
+    const { data } = await client
+      .from('church_store')
+      .select('data')
+      .eq('id', `game_session_${sessionId}`)
+      .maybeSingle();
+    if (data?.data) return data.data as YouthGameSession;
+  } catch {}
+  return null;
+}
+
+/**
+ * Atomically persist a single player's state & answers under their own unique row
+ * (game_player_<sessionId>_<playerId>) so simultaneous answers NEVER overwrite each other.
+ */
+export async function saveGamePlayerOnline(
+  sessionId: string,
+  roomCode: string,
+  player: YouthGamePlayer
+): Promise<{ success: boolean }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false };
+
+  const nowIso = new Date().toISOString();
+  const payloadPlayer: YouthGamePlayer = { ...player, updatedAt: nowIso };
+  const cleanRoom = roomCode.trim().toUpperCase();
+
+  // Broadcast immediately in parallel with DB write for instant leaderboard & lobby presence
+  const broadcastPromise = broadcastGameRoomSignal(cleanRoom, {
+    type: 'player_update',
+    player: payloadPlayer,
+  });
+
+  try {
+    const { error } = await client.from('church_store').upsert(
+      {
+        id: `game_player_${sessionId}_${player.id}`,
+        data: payloadPlayer,
+        updated_at: nowIso,
+      },
+      { onConflict: 'id' }
+    );
+
+    await broadcastPromise;
+
+    if (!error) {
+      return { success: true };
+    }
+  } catch (err) {
+    console.warn('Error saving game player:', err);
+    await broadcastPromise.catch(() => {});
+  }
+  return { success: false };
+}
+
+/**
+ * Returns null when the fetch fails so callers never confuse a transient network error with an empty room.
+ */
+export async function fetchGamePlayers(sessionId: string): Promise<YouthGamePlayer[] | null> {
+  const client = getSupabaseClient();
+  if (!client || !sessionId) return null;
+
+  try {
+    const { data, error } = await client
+      .from('church_store')
+      .select('id, data')
+      .like('id', `game_player_${sessionId}_%`)
+      .limit(500);
+
+    if (!error && Array.isArray(data)) {
+      return data
+        .map((row: any) => row?.data as YouthGamePlayer)
+        .filter((p) => p && p.id)
+        .sort((a, b) => {
+          if ((b.score || 0) !== (a.score || 0)) return (b.score || 0) - (a.score || 0);
+          if ((b.correctCount || 0) !== (a.correctCount || 0)) return (b.correctCount || 0) - (a.correctCount || 0);
+          return (a.joinedAt || '').localeCompare(b.joinedAt || '');
+        });
+    }
+  } catch (err) {
+    console.warn('Error fetching game players:', err);
+  }
+  return null;
+}
+
+const activeGameChannels = new Map<string, ReturnType<SupabaseClient['channel']>>();
+const subscribedGameChannels = new Set<string>();
+const pendingGameSignals = new Map<string, GameRoomSignal[]>();
+const gameRoomListeners = new Map<
+  string,
+  Set<{
+    sessionId: string;
+    onSignal: (signal: GameRoomSignal) => void;
+    onDbRefresh?: () => void;
+  }>
+>();
+
+function ensureGameRoomChannel(roomCode: string): ReturnType<SupabaseClient['channel']> | null {
+  const client = getSupabaseClient();
+  if (!client || !roomCode) return null;
+
+  const cleanRoom = roomCode.trim().toUpperCase();
+  const channelName = `eclesia-game-${cleanRoom}`;
+  const existing = activeGameChannels.get(channelName);
+  if (existing) return existing;
+
+  const channel = client.channel(channelName, {
+    config: { broadcast: { self: false, ack: false } },
+  });
+
+  channel
+    .on('broadcast', { event: 'game_event' }, (msg) => {
+      const signal = msg?.payload as GameRoomSignal | undefined;
+      if (!signal || signal.senderId === CLIENT_INSTANCE_ID) return;
+      const listeners = gameRoomListeners.get(cleanRoom);
+      listeners?.forEach((entry) => {
+        try {
+          entry.onSignal(signal);
+        } catch {}
+      });
+    })
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'church_store' },
+      (payload: any) => {
+        const changedId = String(payload?.new?.id || payload?.old?.id || '');
+        if (!changedId.startsWith('game_session_') && !changedId.startsWith('game_player_')) {
+          return;
+        }
+        const listeners = gameRoomListeners.get(cleanRoom);
+        listeners?.forEach((entry) => {
+          if (
+            changedId === `game_session_${entry.sessionId}` ||
+            changedId.startsWith(`game_player_${entry.sessionId}_`)
+          ) {
+            try {
+              entry.onDbRefresh?.();
+            } catch {}
+          }
+        });
+      }
+    )
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        subscribedGameChannels.add(channelName);
+        const queued = pendingGameSignals.get(channelName);
+        if (queued && queued.length > 0) {
+          pendingGameSignals.delete(channelName);
+          queued.forEach((sig) => {
+            channel
+              .send({
+                type: 'broadcast',
+                event: 'game_event',
+                payload: sig,
+              })
+              .catch(() => {});
+          });
+        }
+      } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        subscribedGameChannels.delete(channelName);
+      }
+    });
+
+  activeGameChannels.set(channelName, channel);
+  return channel;
+}
+
+async function broadcastGameRoomSignal(
+  roomCode: string,
+  partial: Omit<GameRoomSignal, 'senderId' | 'updatedAt'>
+): Promise<void> {
+  const cleanRoom = roomCode.trim().toUpperCase();
+  const channelName = `eclesia-game-${cleanRoom}`;
+  const channel = ensureGameRoomChannel(cleanRoom);
+  if (!channel) return;
+
+  const signal: GameRoomSignal = {
+    senderId: CLIENT_INSTANCE_ID,
+    updatedAt: new Date().toISOString(),
+    ...partial,
+  };
+
+  if (!subscribedGameChannels.has(channelName)) {
+    const queue = pendingGameSignals.get(channelName) || [];
+    queue.push(signal);
+    if (queue.length > 10) queue.shift();
+    pendingGameSignals.set(channelName, queue);
+  }
+
+  try {
+    await channel.send({
+      type: 'broadcast',
+      event: 'game_event',
+      payload: signal,
+    });
+  } catch {}
+}
+
+export function subscribeToGameRoom(
+  roomCode: string,
+  sessionId: string,
+  onSignal: (signal: GameRoomSignal) => void,
+  onDatabaseFallbackRefresh?: () => void
+): () => void {
+  const cleanRoom = roomCode.trim().toUpperCase();
+  if (!cleanRoom) return () => {};
+
+  ensureGameRoomChannel(cleanRoom);
+  let set = gameRoomListeners.get(cleanRoom);
+  if (!set) {
+    set = new Set();
+    gameRoomListeners.set(cleanRoom, set);
+  }
+
+  const entry = {
+    sessionId,
+    onSignal,
+    onDbRefresh: onDatabaseFallbackRefresh,
+  };
+  set.add(entry);
+
+  return () => {
+    const currentSet = gameRoomListeners.get(cleanRoom);
+    if (currentSet) {
+      currentSet.delete(entry);
+      if (currentSet.size === 0) {
+        gameRoomListeners.delete(cleanRoom);
+        const channelName = `eclesia-game-${cleanRoom}`;
+        const channel = activeGameChannels.get(channelName);
+        const client = getSupabaseClient();
+        if (channel && client) {
+          client.removeChannel(channel);
+        }
+        activeGameChannels.delete(channelName);
+        subscribedGameChannels.delete(channelName);
+        pendingGameSignals.delete(channelName);
+      }
+    }
+  };
+}
+
+
 

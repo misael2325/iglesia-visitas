@@ -23,6 +23,8 @@ import { PhotoGalleryManager } from './components/PhotoGalleryManager';
 import { PublicGalleryView } from './components/PublicGalleryView';
 import { PublicCharacterRegistrationView } from './components/PublicCharacterRegistrationView';
 import { BiblicalCharacterManager } from './components/BiblicalCharacterManager';
+import { YouthGamesManager, DEFAULT_STARTER_YOUTH_GAMES } from './components/YouthGamesManager';
+import { YouthGameLiveRoom, LiveRoomViewMode } from './components/YouthGameLiveRoom';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import { 
@@ -40,8 +42,11 @@ import {
   ClubEnrollment,
   BiblicalCharacterRegistration,
   ContestCustomConfig,
-  isSecretariaRole,
-  isDirectivaClubesRole
+  YouthGame,
+  canUserAccessConfig,
+  getAllowedModulesForUser,
+  isSecretariaRestrictedUser,
+  normalizeAppUser
 } from './types';
 import { getWeekDays, formatLocalDate } from './utils/dateUtils';
 import { 
@@ -63,6 +68,16 @@ import {
   saveClubTransactionOnline,
   saveCamporeeShirtOnline,
   saveClubEnrollmentOnline,
+  saveAttendeeOnline,
+  saveEventOnline,
+  savePhotosOnline,
+  saveUserOnline,
+  saveYouthGameOnline,
+  deleteYouthGameOnline,
+  subscribeLiveSyncBroadcast,
+  fetchCloudLastUpdated,
+  getLastKnownCloudUpdatedAt,
+  LiveSyncSignal,
   getLocalDeletedIds,
   recordLocalDeletedIds
 } from './services/supabaseClient';
@@ -94,6 +109,7 @@ const STORAGE_KEYS = {
   CLUB_ENROLLMENTS: 'eclesia_club_enrollments_v2',
   BIBLICAL_CHARACTERS: 'eclesia_biblical_characters_v2',
   CONTEST_CONFIG: 'eclesia_contest_config_v2',
+  YOUTH_GAMES: 'eclesia_youth_games_v2',
 };
 
 export const DEFAULT_CONTEST_CONFIG: ContestCustomConfig = {
@@ -112,6 +128,7 @@ export const DEFAULT_ADMIN_USER: AppUser = {
   email: 'misaeldelossantosamador23@gmail.com',
   password: 'Misa2325*',
   role: 'administrador',
+  roles: ['administrador'],
   createdAt: '2026-10-24T00:00:00Z',
   lastLogin: '2026-10-24T09:18:00Z',
 };
@@ -128,11 +145,20 @@ export default function App() {
   // Automatically configure Supabase if url has embedded sync token (?dbsync=...)
   autoLinkSupabaseFromUrl();
 
-  // Top-Level Module Navigation: 'portal' vs 'visitas' vs 'clubes' vs 'fotos' vs 'personaje_biblico'
+  // Top-Level Module Navigation: 'portal' vs 'visitas' vs 'clubes' vs 'fotos' vs 'personaje_biblico' vs 'jovenes_games'
   const [activeModule, setActiveModule] = useState<AppModule>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.ACTIVE_MODULE);
-      if (stored === 'clubes' || stored === 'visitas' || stored === 'portal' || stored === 'fotos' || stored === 'personaje_biblico') return stored;
+      if (
+        stored === 'clubes' ||
+        stored === 'visitas' ||
+        stored === 'portal' ||
+        stored === 'fotos' ||
+        stored === 'personaje_biblico' ||
+        stored === 'jovenes_games'
+      ) {
+        return stored;
+      }
       return 'portal';
     } catch {
       return 'portal';
@@ -169,6 +195,23 @@ export default function App() {
     if (typeof window === 'undefined') return false;
     const params = new URLSearchParams(window.location.search);
     return params.get('view') === 'personaje_biblico' || params.get('evento') === 'personaje_biblico';
+  });
+
+  // Public Youth Games URL detection (?view=jovenes_games&room=PIN&mode=player|screen)
+  const [publicGameParams, setPublicGameParams] = useState<{
+    roomCode: string;
+    mode: LiveRoomViewMode;
+  } | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('view') === 'jovenes_games') {
+      const m = params.get('mode');
+      return {
+        roomCode: (params.get('room') || '').toUpperCase(),
+        mode: m === 'screen' ? 'screen' : 'player',
+      };
+    }
+    return null;
   });
 
   const initialPublicAlbum = useMemo(() => {
@@ -304,12 +347,26 @@ export default function App() {
     }
   });
 
+  // Sociedad de Jóvenes Games State
+  const [youthGames, setYouthGames] = useState<YouthGame[]>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.YOUTH_GAMES);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      return DEFAULT_STARTER_YOUTH_GAMES;
+    } catch {
+      return DEFAULT_STARTER_YOUTH_GAMES;
+    }
+  });
+
   // Users State
   const [users, setUsers] = useState<AppUser[]>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.USERS);
       if (stored) {
-        const parsed: AppUser[] = JSON.parse(stored);
+        const parsed: AppUser[] = JSON.parse(stored).map(normalizeAppUser);
         const adminIndex = parsed.findIndex(
           (u) => u.email.toLowerCase() === DEFAULT_ADMIN_USER.email.toLowerCase()
         );
@@ -321,6 +378,7 @@ export default function App() {
             email: DEFAULT_ADMIN_USER.email,
             password: parsed[adminIndex].password || DEFAULT_ADMIN_USER.password,
             role: 'administrador',
+            roles: ['administrador'],
           };
           return parsed;
         }
@@ -335,7 +393,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
-      if (stored) return JSON.parse(stored);
+      if (stored) return normalizeAppUser(JSON.parse(stored));
       return null;
     } catch {
       return null;
@@ -405,16 +463,22 @@ export default function App() {
     }, 2800);
   };
 
-  // Enforce role-based restrictions for 'secretaria' and 'directiva_clubes'
+  // Enforce role-based restrictions dynamically (supporting multi-role users & Directiva de Clubes / Jóvenes)
   useEffect(() => {
-    if (isSecretariaRole(currentUser?.role)) {
+    if (!currentUser) return;
+    if (isSecretariaRestrictedUser(currentUser)) {
       if (currentTab === 'conferencias' || currentTab === 'estadisticas') {
         setCurrentTab('asistencia');
       }
     }
-    if (isDirectivaClubesRole(currentUser?.role)) {
-      if (activeModule !== 'clubes') {
-        setActiveModule('clubes');
+    const allowed = getAllowedModulesForUser(currentUser);
+    if (allowed.length === 1) {
+      if (activeModule !== allowed[0]) {
+        setActiveModule(allowed[0]);
+      }
+    } else if (allowed.length > 1) {
+      if (activeModule !== 'portal' && !allowed.includes(activeModule)) {
+        setActiveModule('portal');
       }
     }
   }, [currentUser, currentTab, activeModule]);
@@ -474,6 +538,14 @@ export default function App() {
   }, [contestConfig]);
 
   useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.YOUTH_GAMES, JSON.stringify(youthGames));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [youthGames]);
+
+  useEffect(() => {
     if (currentUser) {
       localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser));
     } else {
@@ -530,7 +602,7 @@ export default function App() {
     const map = new Map<string, T>();
     filteredCloud.forEach((item) => map.set(item.id, item));
     localPrev.forEach((item) => {
-      if (pendingSaveIdsRef.current.has(item.id) && !map.has(item.id)) {
+      if (pendingSaveIdsRef.current.has(item.id)) {
         map.set(item.id, item);
       }
     });
@@ -569,7 +641,13 @@ export default function App() {
       setZones(cloudData.zones);
     }
     if (Array.isArray(cloudData.users) && cloudData.users.length > 0) {
-      setUsers((prev) => mergeCloudArray(cloudData.users, prev) ?? prev);
+      const normalizedCloudUsers = cloudData.users.map(normalizeAppUser);
+      setUsers((prev) => mergeCloudArray(normalizedCloudUsers, prev) ?? prev);
+      setCurrentUser((prev) => {
+        if (!prev) return null;
+        const fresh = normalizedCloudUsers.find((u) => u.id === prev.id);
+        return fresh ? normalizeAppUser({ ...prev, role: fresh.role, roles: fresh.roles, name: fresh.name, password: fresh.password }) : prev;
+      });
     }
     if (Array.isArray(cloudData.photoAlbums) && cloudData.photoAlbums.length > 0) {
       setPhotoAlbums(cloudData.photoAlbums);
@@ -594,6 +672,9 @@ export default function App() {
     if (cloudData.contestConfig) {
       setContestConfig(cloudData.contestConfig);
     }
+    if (Array.isArray(cloudData.youthGames) && cloudData.youthGames.length > 0) {
+      setYouthGames((prev) => mergeCloudArray(cloudData.youthGames, prev) ?? prev);
+    }
 
     if (showSummaryToast && summary.length > 0) {
       showToast(`☁️ Base de datos sincronizada (${summary.join(', ')})`);
@@ -615,7 +696,112 @@ export default function App() {
     }
   };
 
+  const applyRemoteLiveSignal = (signal: LiveSyncSignal) => {
+    if (!hasCompletedInitialPullRef.current) return;
+
+    if (signal.action === 'delete' && Array.isArray(signal.deletedIds) && signal.deletedIds.length > 0) {
+      const delSet = new Set(signal.deletedIds);
+      const now = Date.now();
+      signal.deletedIds.forEach((id) => recentlyDeletedIdsRef.current.set(id, now));
+      recordLocalDeletedIds(signal.deletedIds);
+
+      setAttendees((prev) => prev.filter((a) => !delSet.has(a.id)));
+      setEvents((prev) =>
+        prev
+          .filter((e) => !delSet.has(e.id))
+          .map((e) => ({ ...e, attendees: (e.attendees || []).filter((id) => !delSet.has(id)) }))
+      );
+      setClubs((prev) => prev.filter((c) => !delSet.has(c.id)));
+      setClubActivities((prev) => prev.filter((a) => !delSet.has(a.id)));
+      setClubTransactions((prev) => prev.filter((t) => !delSet.has(t.id)));
+      setCamporeeShirts((prev) => prev.filter((s) => !delSet.has(s.id)));
+      setClubEnrollments((prev) => prev.filter((e) => !delSet.has(e.id)));
+      setBiblicalCharacters((prev) => prev.filter((b) => !delSet.has(b.id)));
+      setYouthGames((prev) => prev.filter((g) => !delSet.has(g.id)));
+      setUsers((prev) => prev.filter((u) => !delSet.has(u.id)));
+      setPhotos((prev) => {
+        const next = prev.filter((p) => !delSet.has(p.id));
+        if (next.length !== prev.length) {
+          saveAllPhotos(next).catch(console.error);
+        }
+        return next;
+      });
+    } else if (signal.action === 'upsert' && signal.entity && signal.record?.id) {
+      const rec = signal.record;
+      const persistedDeleted = getLocalDeletedIds();
+      if (
+        !recentlyDeletedIdsRef.current.has(rec.id) &&
+        !pendingDeleteIdsRef.current.has(rec.id) &&
+        !pendingSaveIdsRef.current.has(rec.id) &&
+        !persistedDeleted[rec.id]
+      ) {
+        const upsertItem = <T extends { id: string }>(prev: T[], item: T): T[] => [
+          item,
+          ...prev.filter((x) => x.id !== item.id),
+        ];
+
+        switch (signal.entity) {
+          case 'attendees':
+            setAttendees((prev) => upsertItem(prev, rec));
+            break;
+          case 'events':
+            setEvents((prev) => upsertItem(prev, rec));
+            break;
+          case 'clubs':
+            setClubs((prev) => upsertItem(prev, rec));
+            break;
+          case 'clubActivities':
+            setClubActivities((prev) => upsertItem(prev, rec));
+            break;
+          case 'clubTransactions':
+            setClubTransactions((prev) => upsertItem(prev, rec));
+            break;
+          case 'camporeeShirts':
+            setCamporeeShirts((prev) => upsertItem(prev, rec));
+            break;
+          case 'clubEnrollments':
+            setClubEnrollments((prev) => upsertItem(prev, rec));
+            break;
+          case 'biblicalCharacters':
+            setBiblicalCharacters((prev) =>
+              upsertItem(prev, rec).sort(
+                (a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()
+              )
+            );
+            break;
+          case 'users': {
+            const normUser = normalizeAppUser(rec);
+            setUsers((prev) => upsertItem(prev, normUser));
+            setCurrentUser((prev) =>
+              prev && prev.id === normUser.id
+                ? normalizeAppUser({ ...prev, role: normUser.role, roles: normUser.roles, name: normUser.name, password: normUser.password })
+                : prev
+            );
+            break;
+          }
+          case 'youthGames':
+            setYouthGames((prev) => upsertItem(prev, rec));
+            break;
+        }
+      }
+    }
+
+    if (pendingSaveIdsRef.current.size === 0 && pendingDeleteIdsRef.current.size === 0) {
+      syncFromCloudNow(false);
+    }
+  };
+
+  const isPublicGameView = Boolean(publicGameParams);
+  const activeModuleRef = useRef<AppModule>(activeModule);
   useEffect(() => {
+    activeModuleRef.current = activeModule;
+  }, [activeModule]);
+
+  useEffect(() => {
+    // Public Youth Games player/screen views manage their own lightweight single-room channel
+    // and must NEVER download or subscribe to all 12 admin church tables.
+    if (isPublicGameView) return;
+
     let isMounted = true;
     syncFromCloudNow(true).finally(() => {
       if (isMounted) {
@@ -623,105 +809,115 @@ export default function App() {
       }
     });
 
-    // Real-time Supabase channel subscription across all PCs
-    const client = getSupabaseClient();
-    const channel = client
-      ? client
-          .channel('eclesia-realtime-sync')
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'church_store' },
-            () => {
-              if (
-                hasCompletedInitialPullRef.current &&
-                pendingSaveIdsRef.current.size === 0 &&
-                pendingDeleteIdsRef.current.size === 0
-              ) {
-                syncFromCloudNow(false);
-              }
-            }
-          )
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'biblical_characters' },
-            () => {
-              if (
-                hasCompletedInitialPullRef.current &&
-                pendingSaveIdsRef.current.size === 0 &&
-                pendingDeleteIdsRef.current.size === 0
-              ) {
-                handleRefreshCharacters();
-              }
-            }
-          )
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'club_enrollments' },
-            () => {
-              if (
-                hasCompletedInitialPullRef.current &&
-                pendingSaveIdsRef.current.size === 0 &&
-                pendingDeleteIdsRef.current.size === 0
-              ) {
-                syncFromCloudNow(false);
-              }
-            }
-          )
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'camporee_shirts' },
-            () => {
-              if (
-                hasCompletedInitialPullRef.current &&
-                pendingSaveIdsRef.current.size === 0 &&
-                pendingDeleteIdsRef.current.size === 0
-              ) {
-                syncFromCloudNow(false);
-              }
-            }
-          )
-          .subscribe()
-      : null;
+    // 1. Instant WebSocket Broadcast listener across Web + Mobile PWA
+    const unsubscribeBroadcast = subscribeLiveSyncBroadcast(applyRemoteLiveSignal);
 
-    // Also pull fresh data when switching back to this tab/window
+    // 2. Real-time Postgres Changes subscription across all core tables
+    const client = getSupabaseClient();
+    const realtimeTables = [
+      'church_store',
+      'attendees',
+      'church_events',
+      'clubs',
+      'club_activities',
+      'club_transactions',
+      'camporee_shirts',
+      'club_enrollments',
+      'biblical_characters',
+      'church_photos',
+      'app_users',
+      'youth_games',
+    ];
+
+    let channel = client ? client.channel('eclesia-realtime-sync') : null;
+    if (channel) {
+      for (const tbl of realtimeTables) {
+        channel = channel.on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: tbl },
+          (payload: any) => {
+            // Live multiplayer game rows live in church_store under game_session_*, game_room_*, game_player_*.
+            // Ignore them here so player joins/answers never trigger full-app cloud pulls or IndexedDB writes.
+            if (tbl === 'church_store') {
+              const changedId = String(payload?.new?.id || payload?.old?.id || '');
+              if (
+                changedId.startsWith('game_session_') ||
+                changedId.startsWith('game_room_') ||
+                changedId.startsWith('game_player_')
+              ) {
+                return;
+              }
+            }
+            if (
+              hasCompletedInitialPullRef.current &&
+              pendingSaveIdsRef.current.size === 0 &&
+              pendingDeleteIdsRef.current.size === 0
+            ) {
+              if (tbl === 'biblical_characters') {
+                handleRefreshCharacters();
+              } else {
+                syncFromCloudNow(false);
+              }
+            }
+          }
+        );
+      }
+      channel.subscribe();
+    }
+
+    // 3. Immediate sync when returning to the browser tab or reopening mobile PWA from background
     const handleFocusSync = () => {
       if (
         hasCompletedInitialPullRef.current &&
         document.visibilityState !== 'hidden' &&
         pendingSaveIdsRef.current.size === 0 &&
-        pendingDeleteIdsRef.current.size === 0
+        pendingDeleteIdsRef.current.size === 0 &&
+        activeModuleRef.current !== 'jovenes_games'
       ) {
         syncFromCloudNow(false);
       }
     };
     window.addEventListener('focus', handleFocusSync);
+    window.addEventListener('pageshow', handleFocusSync);
+    window.addEventListener('online', handleFocusSync);
     document.addEventListener('visibilitychange', handleFocusSync);
 
-    // Background heartbeat sync every 20s for real-time parity across PCs
-    const interval = setInterval(() => {
+    // 4. Lightweight 4s timestamp check fallback (skipped during live Youth Games to keep UI lag-free)
+    const interval = setInterval(async () => {
       if (
         hasCompletedInitialPullRef.current &&
+        document.visibilityState !== 'hidden' &&
         pendingSaveIdsRef.current.size === 0 &&
-        pendingDeleteIdsRef.current.size === 0
+        pendingDeleteIdsRef.current.size === 0 &&
+        !isPullingCloudRef.current &&
+        activeModuleRef.current !== 'jovenes_games'
       ) {
-        syncFromCloudNow(false);
+        const cloudTs = await fetchCloudLastUpdated();
+        const localTs = getLastKnownCloudUpdatedAt();
+        if (cloudTs && cloudTs !== localTs) {
+          syncFromCloudNow(false);
+        }
       }
-    }, 20000);
+    }, 4000);
 
     return () => {
       isMounted = false;
+      unsubscribeBroadcast();
       window.removeEventListener('focus', handleFocusSync);
+      window.removeEventListener('pageshow', handleFocusSync);
+      window.removeEventListener('online', handleFocusSync);
       document.removeEventListener('visibilitychange', handleFocusSync);
       clearInterval(interval);
       if (channel && client) {
         client.removeChannel(channel);
       }
     };
-  }, []);
+  }, [isPublicGameView]);
 
   // 2. Cloud Auto-Sync with fast debounce (600ms): ONLY pushes on real local mutations, never after cloud pulls
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
+    if (isPublicGameView) return;
     if (!hasCompletedInitialPullRef.current) return;
     if (localMutationVersionRef.current === lastPushedVersionRef.current) return;
 
@@ -749,6 +945,7 @@ export default function App() {
         clubEnrollments,
         biblicalCharacters,
         contestConfig,
+        youthGames,
         deletedIds: getLocalDeletedIds(),
       };
       const res = await pushDataToSupabase(payload);
@@ -760,7 +957,7 @@ export default function App() {
     return () => {
       if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     };
-  }, [attendees, events, zones, users, clubs, clubActivities, clubTransactions, photos, photoAlbums, camporeeShirts, clubEnrollments, biblicalCharacters, contestConfig]);
+  }, [attendees, events, zones, users, clubs, clubActivities, clubTransactions, photos, photoAlbums, camporeeShirts, clubEnrollments, biblicalCharacters, contestConfig, youthGames]);
 
   // Compute days for current week offset
   const weekDays = useMemo(() => {
@@ -772,13 +969,24 @@ export default function App() {
   // Synchronized Attendance Handler: Attendance Matrix <-> Conferences <-> Reports <-> Stats
   const handleToggleDayAttendance = (attendeeId: string, dateString: string) => {
     markLocalMutation();
-    let willBeAttended = false;
+    const targetPerson = attendees.find((a) => a.id === attendeeId);
+    const willBeAttended = targetPerson ? !targetPerson.attendance[dateString] : true;
+
+    let updatedPerson: Attendee | null = null;
+    if (targetPerson) {
+      updatedPerson = {
+        ...targetPerson,
+        attendance: {
+          ...targetPerson.attendance,
+          [dateString]: willBeAttended,
+        },
+      };
+      pendingSaveIdsRef.current.add(attendeeId);
+    }
 
     setAttendees((prev) =>
       prev.map((person) => {
         if (person.id !== attendeeId) return person;
-        const currentVal = !!person.attendance[dateString];
-        willBeAttended = !currentVal;
         return {
           ...person,
           attendance: {
@@ -789,30 +997,47 @@ export default function App() {
       })
     );
 
-    // Synchronize two-way with conferences / events on that date or active event
+    const changedEvents: ChurchEvent[] = [];
+    const todayStr = formatLocalDate(new Date());
+
     setEvents((prevEvents) =>
       prevEvents.map((evt) => {
-        const isEventOnDate = evt.date === dateString || (activeEventId === evt.id && dateString === formatLocalDate(new Date()));
+        const isEventOnDate = evt.date === dateString || (activeEventId === evt.id && dateString === todayStr);
         if (!isEventOnDate) return evt;
 
         const currentAttendees = evt.attendees || [];
+        let nextEvt = evt;
         if (willBeAttended) {
           if (!currentAttendees.includes(attendeeId)) {
-            return { ...evt, attendees: [...currentAttendees, attendeeId] };
+            nextEvt = { ...evt, attendees: [...currentAttendees, attendeeId] };
           }
-        } else {
-          return { ...evt, attendees: currentAttendees.filter((id) => id !== attendeeId) };
+        } else if (currentAttendees.includes(attendeeId)) {
+          nextEvt = { ...evt, attendees: currentAttendees.filter((id) => id !== attendeeId) };
         }
-        return evt;
+        if (nextEvt !== evt) {
+          changedEvents.push(nextEvt);
+        }
+        return nextEvt;
       })
     );
 
-    const person = attendees.find((a) => a.id === attendeeId);
-    if (person) {
+    if (updatedPerson) {
+      saveAttendeeOnline(updatedPerson)
+        .catch(console.error)
+        .finally(() => pendingSaveIdsRef.current.delete(attendeeId));
+    }
+    changedEvents.forEach((evt) => {
+      pendingSaveIdsRef.current.add(evt.id);
+      saveEventOnline(evt)
+        .catch(console.error)
+        .finally(() => pendingSaveIdsRef.current.delete(evt.id));
+    });
+
+    if (targetPerson) {
       showToast(
         willBeAttended
-          ? `Asistencia tachada y guardada para ${person.firstName}`
-          : `Asistencia desmarcada para ${person.firstName}`
+          ? `Asistencia tachada y guardada para ${targetPerson.firstName}`
+          : `Asistencia desmarcada para ${targetPerson.firstName}`
       );
     }
   };
@@ -823,21 +1048,21 @@ export default function App() {
 
     markLocalMutation();
     const alreadyAttending = targetEvent.attendees && targetEvent.attendees.includes(attendeeId);
+    const updatedEvent: ChurchEvent = {
+      ...targetEvent,
+      attendees: alreadyAttending
+        ? (targetEvent.attendees || []).filter((id) => id !== attendeeId)
+        : [...(targetEvent.attendees || []), attendeeId],
+    };
 
-    setEvents((prev) =>
-      prev.map((evt) => {
-        if (evt.id !== eventId) return evt;
-        const nextAttendees = alreadyAttending
-          ? (evt.attendees || []).filter((id) => id !== attendeeId)
-          : [...(evt.attendees || []), attendeeId];
-        return {
-          ...evt,
-          attendees: nextAttendees,
-        };
-      })
-    );
+    pendingSaveIdsRef.current.add(eventId);
+    setEvents((prev) => prev.map((evt) => (evt.id === eventId ? updatedEvent : evt)));
+    saveEventOnline(updatedEvent)
+      .catch(console.error)
+      .finally(() => pendingSaveIdsRef.current.delete(eventId));
 
     // Sync back to attendee calendar if the event has a date
+    const targetPerson = attendees.find((a) => a.id === attendeeId);
     if (targetEvent.date) {
       setAttendees((prevAtt) =>
         prevAtt.map((a) => {
@@ -851,45 +1076,68 @@ export default function App() {
           };
         })
       );
+
+      if (targetPerson) {
+        const updatedPerson: Attendee = {
+          ...targetPerson,
+          attendance: {
+            ...targetPerson.attendance,
+            [targetEvent.date]: !alreadyAttending,
+          },
+        };
+        pendingSaveIdsRef.current.add(attendeeId);
+        saveAttendeeOnline(updatedPerson)
+          .catch(console.error)
+          .finally(() => pendingSaveIdsRef.current.delete(attendeeId));
+      }
     }
 
-    const person = attendees.find((a) => a.id === attendeeId);
     showToast(
       alreadyAttending
-        ? `Asistencia desmarcada para ${person ? person.firstName : 'asistente'}`
-        : `Asistencia registrada para ${person ? person.firstName : 'asistente'}`
+        ? `Asistencia desmarcada para ${targetPerson ? targetPerson.firstName : 'asistente'}`
+        : `Asistencia registrada para ${targetPerson ? targetPerson.firstName : 'asistente'}`
     );
   };
 
   // Add new attendee
   const handleAddAttendee = (newAttendee: Attendee, markCurrentEvent?: boolean) => {
     markLocalMutation();
+    pendingSaveIdsRef.current.add(newAttendee.id);
     if (newAttendee.zone && !zones.includes(newAttendee.zone)) {
       setZones((prev) => [...prev, newAttendee.zone]);
     }
 
-    if (markCurrentEvent && activeEvent) {
-      setEvents((prev) =>
-        prev.map((evt) =>
-          evt.id === activeEvent.id && !evt.attendees.includes(newAttendee.id)
-            ? { ...evt, attendees: [...evt.attendees, newAttendee.id] }
-            : evt
-        )
-      );
+    if (markCurrentEvent && activeEvent && !activeEvent.attendees.includes(newAttendee.id)) {
+      const updatedEvt: ChurchEvent = {
+        ...activeEvent,
+        attendees: [...activeEvent.attendees, newAttendee.id],
+      };
+      pendingSaveIdsRef.current.add(updatedEvt.id);
+      setEvents((prev) => prev.map((evt) => (evt.id === updatedEvt.id ? updatedEvt : evt)));
+      saveEventOnline(updatedEvt)
+        .catch(console.error)
+        .finally(() => pendingSaveIdsRef.current.delete(updatedEvt.id));
     }
 
     setAttendees((prev) => [newAttendee, ...prev]);
+    saveAttendeeOnline(newAttendee)
+      .catch(console.error)
+      .finally(() => pendingSaveIdsRef.current.delete(newAttendee.id));
     showToast(`¡${newAttendee.firstName} ${newAttendee.lastName} registrado con éxito!`);
   };
 
   // Update attendee
   const handleUpdateAttendee = (updated: Attendee) => {
     markLocalMutation();
+    pendingSaveIdsRef.current.add(updated.id);
     if (updated.zone && !zones.includes(updated.zone)) {
       setZones((prev) => [...prev, updated.zone]);
     }
     setAttendees((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
-    showToast(`Datos actualizados correctamente`);
+    saveAttendeeOnline(updated)
+      .catch(console.error)
+      .finally(() => pendingSaveIdsRef.current.delete(updated.id));
+    showToast(`Datos actualizados en tiempo real`);
   };
 
   // Delete attendee (real-time relational + store)
@@ -912,8 +1160,12 @@ export default function App() {
   // Add event
   const handleAddEvent = (newEvent: ChurchEvent) => {
     markLocalMutation();
+    pendingSaveIdsRef.current.add(newEvent.id);
     setEvents((prev) => [newEvent, ...prev]);
     setActiveEventId(newEvent.id);
+    saveEventOnline(newEvent)
+      .catch(console.error)
+      .finally(() => pendingSaveIdsRef.current.delete(newEvent.id));
     showToast(`Actividad "${newEvent.title}" creada y activada`);
   };
 
@@ -1093,11 +1345,17 @@ export default function App() {
   // Photos Handlers
   const handleAddPhotos = (newPhotos: ChurchPhoto[]) => {
     markLocalMutation();
+    newPhotos.forEach((p) => pendingSaveIdsRef.current.add(p.id));
     setPhotos((prev) => {
       const updated = [...newPhotos, ...prev];
       saveAllPhotos(updated).catch(console.error);
       return updated;
     });
+    savePhotosOnline(newPhotos)
+      .catch(console.error)
+      .finally(() => {
+        newPhotos.forEach((p) => pendingSaveIdsRef.current.delete(p.id));
+      });
     showToast(`¡${newPhotos.length} foto(s) guardadas en la galería!`);
   };
 
@@ -1227,18 +1485,55 @@ export default function App() {
     setContestConfig(nextConfig);
   };
 
+  // Sociedad de Jóvenes Games Handlers
+  const handleSaveYouthGame = async (game: YouthGame) => {
+    markLocalMutation();
+    recentlyDeletedIdsRef.current.delete(game.id);
+    pendingSaveIdsRef.current.add(game.id);
+    setYouthGames((prev) => {
+      const exists = prev.some((g) => g.id === game.id);
+      return exists ? prev.map((g) => (g.id === game.id ? game : g)) : [game, ...prev];
+    });
+    try {
+      await saveYouthGameOnline(game);
+    } finally {
+      pendingSaveIdsRef.current.delete(game.id);
+    }
+  };
+
+  const handleDeleteYouthGame = async (gameId: string) => {
+    markDeletedId(gameId);
+    pendingDeleteIdsRef.current.add(gameId);
+    setYouthGames((prev) => prev.filter((g) => g.id !== gameId));
+    try {
+      await deleteYouthGameOnline(gameId);
+    } finally {
+      pendingDeleteIdsRef.current.delete(gameId);
+    }
+  };
+
   // User Authentication & Management Handlers
   const handleRegisterUser = (newUser: AppUser) => {
+    const normUser = normalizeAppUser(newUser);
     markLocalMutation();
-    setUsers((prev) => [...prev, newUser]);
-    showToast(`Usuario "${newUser.name}" registrado.`);
-    return { success: true, message: 'Usuario creado exitosamente', user: newUser };
+    pendingSaveIdsRef.current.add(normUser.id);
+    setUsers((prev) => [...prev, normUser]);
+    saveUserOnline(normUser)
+      .catch(console.error)
+      .finally(() => pendingSaveIdsRef.current.delete(normUser.id));
+    showToast(`Usuario "${normUser.name}" registrado.`);
+    return { success: true, message: 'Usuario creado exitosamente', user: normUser };
   };
 
   const handleAddUserFromAdmin = (newUser: AppUser) => {
+    const normUser = normalizeAppUser(newUser);
     markLocalMutation();
-    setUsers((prev) => [...prev, newUser]);
-    showToast(`Usuario "${newUser.name}" añadido al equipo.`);
+    pendingSaveIdsRef.current.add(normUser.id);
+    setUsers((prev) => [...prev, normUser]);
+    saveUserOnline(normUser)
+      .catch(console.error)
+      .finally(() => pendingSaveIdsRef.current.delete(normUser.id));
+    showToast(`Usuario "${normUser.name}" añadido al equipo.`);
   };
 
   const handleDeleteUser = (userId: string) => {
@@ -1251,36 +1546,54 @@ export default function App() {
     showToast(`Usuario eliminado del sistema y de la nube.`);
   };
 
-  const handleUpdateUserRole = (userId: string, newRole: UserRole) => {
+  const handleUpdateUserRoles = (userId: string, newRoles: UserRole[]) => {
+    const cleanRoles: UserRole[] = newRoles.length > 0 ? newRoles : ['secretaria'];
+    const primaryRole = cleanRoles[0];
     markLocalMutation();
+    const targetUser = users.find((u) => u.id === userId);
     setUsers((prev) =>
-      prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
+      prev.map((u) => (u.id === userId ? { ...u, role: primaryRole, roles: cleanRoles } : u))
     );
     if (currentUser?.id === userId) {
-      setCurrentUser((prev) => (prev ? { ...prev, role: newRole } : null));
+      setCurrentUser((prev) => (prev ? { ...prev, role: primaryRole, roles: cleanRoles } : null));
     }
-    showToast(`Rol de usuario actualizado`);
+    if (targetUser) {
+      pendingSaveIdsRef.current.add(userId);
+      saveUserOnline({ ...targetUser, role: primaryRole, roles: cleanRoles })
+        .catch(console.error)
+        .finally(() => pendingSaveIdsRef.current.delete(userId));
+    }
+    showToast(`Perfiles de usuario actualizados (${cleanRoles.length})`);
   };
 
   const handleResetPassword = (userId: string, newPass: string) => {
     markLocalMutation();
+    const targetUser = users.find((u) => u.id === userId);
     setUsers((prev) =>
       prev.map((u) => (u.id === userId ? { ...u, password: newPass } : u))
     );
     if (currentUser?.id === userId) {
       setCurrentUser((prev) => (prev ? { ...prev, password: newPass } : null));
     }
+    if (targetUser) {
+      pendingSaveIdsRef.current.add(userId);
+      saveUserOnline({ ...targetUser, password: newPass })
+        .catch(console.error)
+        .finally(() => pendingSaveIdsRef.current.delete(userId));
+    }
     showToast(`Contraseña actualizada con éxito.`);
   };
 
   const handleLoginSuccess = (user: AppUser) => {
-    setCurrentUser(user);
-    setActiveModule(isDirectivaClubesRole(user.role) ? 'clubes' : 'portal');
+    const normUser = normalizeAppUser(user);
+    setCurrentUser(normUser);
+    const allowed = getAllowedModulesForUser(normUser);
+    setActiveModule(allowed.length === 1 ? allowed[0] : 'portal');
     setShowInstallBanner(true);
     setUsers((prev) =>
-      prev.map((u) => (u.id === user.id ? { ...u, lastLogin: user.lastLogin } : u))
+      prev.map((u) => (u.id === normUser.id ? { ...normUser, lastLogin: normUser.lastLogin } : u))
     );
-    showToast(`¡Bienvenido/a, ${user.name}!`);
+    showToast(`¡Bienvenido/a, ${normUser.name}!`);
   };
 
   const handleLogout = () => {
@@ -1304,12 +1617,14 @@ export default function App() {
       if (payload.clubEnrollments) setClubEnrollments(payload.clubEnrollments);
       if (payload.biblicalCharacters) setBiblicalCharacters(payload.biblicalCharacters);
       if (payload.contestConfig) setContestConfig(payload.contestConfig);
+      if (payload.youthGames) setYouthGames(payload.youthGames);
 
       if (payload.users && payload.users.length) {
-        const hasAdmin = payload.users.some(
+        const normalizedPayloadUsers = payload.users.map(normalizeAppUser);
+        const hasAdmin = normalizedPayloadUsers.some(
           (u) => u.email.toLowerCase() === DEFAULT_ADMIN_USER.email.toLowerCase()
         );
-        setUsers(hasAdmin ? payload.users : [DEFAULT_ADMIN_USER, ...payload.users]);
+        setUsers(hasAdmin ? normalizedPayloadUsers : [DEFAULT_ADMIN_USER, ...normalizedPayloadUsers]);
       }
       setActiveEventId(payload.events?.[0]?.id || null);
       showToast(`¡Base de datos restaurada! ${payload.attendees.length} asistentes cargados.`);
@@ -1363,10 +1678,17 @@ export default function App() {
         });
       }
       if (payload.users) {
+        const normalizedPayloadUsers = payload.users.map(normalizeAppUser);
         setUsers((prev) => {
           const existingEmails = new Set(prev.map((u) => u.email.toLowerCase()));
-          const newUsers = payload.users!.filter((u) => !existingEmails.has(u.email.toLowerCase()));
+          const newUsers = normalizedPayloadUsers.filter((u) => !existingEmails.has(u.email.toLowerCase()));
           return [...prev, ...newUsers];
+        });
+      }
+      if (payload.youthGames) {
+        setYouthGames((prev) => {
+          const ids = new Set(prev.map((g) => g.id));
+          return [...prev, ...payload.youthGames!.filter((g) => !ids.has(g.id))];
         });
       }
       if (payload.photos) {
@@ -1419,6 +1741,21 @@ export default function App() {
     );
   }
 
+  // Public Youth Games Player or "Otra Pantalla" Leaderboard View (no login required)
+  if (publicGameParams) {
+    return (
+      <YouthGameLiveRoom
+        initialMode={publicGameParams.mode}
+        initialRoomCode={publicGameParams.roomCode}
+        onExit={() => {
+          window.history.pushState({}, '', window.location.pathname);
+          setPublicGameParams(null);
+        }}
+        darkMode={darkMode}
+      />
+    );
+  }
+
   // Require authentication: Nobody can see the app without logging in
   if (!currentUser) {
     return (
@@ -1430,8 +1767,15 @@ export default function App() {
     );
   }
 
-  const isDirectivaClubes = isDirectivaClubesRole(currentUser.role);
-  const effectiveModule: AppModule = isDirectivaClubes ? 'clubes' : activeModule;
+  const allowedModules = getAllowedModulesForUser(currentUser);
+  const hasMultipleModules = allowedModules.length > 1;
+  const canConfig = canUserAccessConfig(currentUser);
+  const effectiveModule: AppModule =
+    allowedModules.length === 1
+      ? allowedModules[0]
+      : activeModule === 'portal' || allowedModules.includes(activeModule as Exclude<AppModule, 'portal'>)
+      ? activeModule
+      : 'portal';
 
   return (
     <div className={`min-h-dvh ${darkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'} flex flex-col transition-colors duration-200`}>
@@ -1467,12 +1811,20 @@ export default function App() {
       {/* Header with Top-Level Module Switcher & User Profile */}
       <Header
         activeModule={effectiveModule}
-        onChangeModule={(mod) => setActiveModule(isDirectivaClubes ? 'clubes' : mod)}
+        onChangeModule={(mod) => {
+          if (allowedModules.length === 1) {
+            setActiveModule(allowedModules[0]);
+            return;
+          }
+          if (mod === 'portal' || allowedModules.includes(mod as Exclude<AppModule, 'portal'>)) {
+            setActiveModule(mod);
+          }
+        }}
         currentTab={currentTab}
         onChangeTab={setCurrentTab}
         onOpenRegister={() => setIsRegisterOpen(true)}
         onOpenBackupModal={() => {
-          if (!isDirectivaClubes) {
+          if (canConfig) {
             setBackupInitialTab('tables');
             setIsBackupOpen(true);
           }
@@ -1499,8 +1851,8 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <main className={`flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 ${!isDirectivaClubes ? 'pb-24 md:pb-6' : 'pb-6'}`}>
-        {/* PORTAL DE ENTRADA: 3 CUADROS RECTANGULARES GRANDES */}
+      <main className={`flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 ${hasMultipleModules ? 'pb-24 md:pb-6' : 'pb-6'}`}>
+        {/* PORTAL DE ENTRADA */}
         {effectiveModule === 'portal' && (
           <PortalEntry
             currentUser={currentUser}
@@ -1514,8 +1866,9 @@ export default function App() {
             albumsCount={photoAlbums.length}
             biblicalCharactersCount={biblicalCharacters.length}
             onSelectModule={(mod) => {
+              if (!allowedModules.includes(mod)) return;
               setActiveModule(mod);
-              if (mod === 'visitas' && isSecretariaRole(currentUser.role)) {
+              if (mod === 'visitas' && isSecretariaRestrictedUser(currentUser)) {
                 setCurrentTab('asistencia');
               }
             }}
@@ -1547,6 +1900,7 @@ export default function App() {
               onBackToPortal={() => setActiveModule('portal')}
               onOpenRegister={() => setIsRegisterOpen(true)}
               userRole={currentUser?.role}
+              currentUser={currentUser}
               attendeesCount={attendees.length}
               eventsCount={events.length}
             />
@@ -1629,7 +1983,7 @@ export default function App() {
             onAddClubEnrollment={handleAddClubEnrollment}
             onUpdateClubEnrollment={handleUpdateClubEnrollment}
             onDeleteClubEnrollment={handleDeleteClubEnrollment}
-            onBackToPortal={isDirectivaClubes ? undefined : () => setActiveModule('portal')}
+            onBackToPortal={hasMultipleModules ? () => setActiveModule('portal') : undefined}
           />
         )}
 
@@ -1645,10 +1999,21 @@ export default function App() {
             currentUser={currentUser}
           />
         )}
+
+        {/* MODULE 4: SOCIEDAD DE JÓVENES GAMES */}
+        {effectiveModule === 'jovenes_games' && (
+          <YouthGamesManager
+            games={youthGames}
+            onSaveGame={handleSaveYouthGame}
+            onDeleteGame={handleDeleteYouthGame}
+            onBackToPortal={hasMultipleModules ? () => setActiveModule('portal') : undefined}
+            currentUser={currentUser}
+          />
+        )}
       </main>
 
       {/* Footer */}
-      <footer className={`mt-auto border-t-2 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-4 ${!isDirectivaClubes ? 'hidden md:block' : ''} no-print transition-colors`}>
+      <footer className={`mt-auto border-t-2 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-4 ${hasMultipleModules ? 'hidden md:block' : ''} no-print transition-colors`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600 dark:text-slate-400 font-semibold">
           <div className="flex items-center gap-2">
             <span className="font-extrabold text-slate-900 dark:text-white">Eclesia</span>
@@ -1667,6 +2032,8 @@ export default function App() {
                 ? 'Gestión de Clubes'
                 : effectiveModule === 'fotos'
                 ? 'Fotos de la Iglesia'
+                : effectiveModule === 'jovenes_games'
+                ? 'Sociedad de Jóvenes Games'
                 : 'Personaje Bíblico'}
             </span>
           </div>
@@ -1715,6 +2082,7 @@ export default function App() {
         clubEnrollments={clubEnrollments}
         biblicalCharacters={biblicalCharacters}
         contestConfig={contestConfig}
+        youthGames={youthGames}
         onRestoreData={handleRestoreData}
         onNotify={showToast}
         initialTab={backupInitialTab}
@@ -1735,7 +2103,7 @@ export default function App() {
         currentUser={currentUser}
         onAddUser={handleAddUserFromAdmin}
         onDeleteUser={handleDeleteUser}
-        onUpdateUserRole={handleUpdateUserRole}
+        onUpdateUserRoles={handleUpdateUserRoles}
         onResetPassword={handleResetPassword}
       />
     </div>

@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { 
-  Church, 
   Lock, 
   Mail, 
   User, 
@@ -89,6 +88,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       email: cleanEmail,
       password,
       role: finalRole,
+      roles: [finalRole],
       createdAt: new Date().toISOString(),
       lastLogin: new Date().toISOString(),
     };
@@ -112,12 +112,17 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       {/* Top Formal Seal */}
       <header className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-blue-400 shadow-md">
-            <Church className="w-5 h-5 text-blue-300" />
+          <div className="w-11 h-11 rounded-xl bg-black border border-slate-700 overflow-hidden flex items-center justify-center shadow-md shrink-0">
+            <img
+              src="/assets/aistudio/a_clean_modern_app_icon_style_graphic_with_a_roun_45278ae7.png"
+              alt="Logo Eclesia"
+              referrerPolicy="no-referrer"
+              className="w-full h-full object-contain scale-[1.06]"
+            />
           </div>
           <div>
             <span className="text-lg font-bold tracking-tight text-white block">Eclesia</span>
-            <span className="text-[11px] text-slate-400 tracking-wide uppercase font-semibold">Sistema de Gestión & Asistencia</span>
+            <span className="text-[11px] text-slate-400 tracking-wide uppercase font-semibold">Gestión de Iglesia y Clubes</span>
           </div>
         </div>
 
@@ -131,7 +136,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       <main className="relative z-10 flex-1 flex items-center justify-center p-4 sm:p-6 my-auto">
         <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden backdrop-blur-md">
           {/* Card Title Bar */}
-          <div className="px-5 sm:px-8 pt-6 sm:pt-8 pb-4 sm:pb-5 text-center border-b border-slate-800/80 bg-slate-900/90">
+          <div className="px-5 sm:px-8 pt-6 sm:pt-7 pb-4 sm:pb-5 text-center border-b border-slate-800/80 bg-slate-900/90">
+            <div className="w-24 h-24 mx-auto mb-3 rounded-2xl overflow-hidden border border-blue-500/30 shadow-lg shadow-blue-950/50 bg-black">
+              <img
+                src="/assets/aistudio/a_clean_modern_app_icon_style_graphic_with_a_roun_45278ae7.png"
+                alt="Eclesia"
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-contain scale-[1.06]"
+              />
+            </div>
             <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
               {mode === 'login' ? 'Iniciar Sesión' : 'Registro de Servidor'}
             </h1>
@@ -251,6 +264,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                 >
                   <option value="secretaria">Secretaría (Asistencia y Reportes únicamente)</option>
                   <option value="directiva_clubes">Directiva de Clubes (Solo módulo de Clubes)</option>
+                  <option value="directiva_jovenes">Directiva de Jóvenes (Solo Sociedad de Jóvenes Games)</option>
                   <option value="pastor">Pastor (Supervisión General)</option>
                   <option value="anciano">Anciano de Iglesia (Supervisión y Asistencia)</option>
                   <option value="administrador">Administrador General (Control Total)</option>
